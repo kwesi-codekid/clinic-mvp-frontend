@@ -110,9 +110,8 @@ export const NAV_CATALOGUE: NavGroup[] = [
       /*
        * OPD is **not** a second kind of record — the API has no `/opd` path and
        * no OPD schema; `opd` is one of the nine values of `Visit.type`. As a
-       * *place* it is the `consulting` station, so this entry lands on the
-       * coming-soon placeholder until T4.2, when it becomes that station's
-       * worklist over `GET /queues/consulting`.
+       * *place* it is the `consulting` station, so this is that station's
+       * worklist over `GET /queues/consulting` (T4.2).
        */
       { label: "OPD", to: "/opd", icon: StethoscopeIcon, roles: CLINICAL_AND_DESK },
       {

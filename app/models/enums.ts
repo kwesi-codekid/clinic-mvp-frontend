@@ -256,6 +256,22 @@ export function comparePriority(a: Priority, b: Priority): number {
   return PRIORITY_RANK[a] - PRIORITY_RANK[b];
 }
 
+/**
+ * Where one patient stands on one station worklist.
+ *
+ * `skipped` is recoverable — a patient who did not answer when called is
+ * skipped, not discharged, and `POST /queues/entries/{id}/requeue` puts them
+ * back. `left` is the one that means they are gone.
+ */
+export const QueueStatuses = defineEnum({
+  waiting: "Waiting",
+  in_service: "In service",
+  done: "Done",
+  skipped: "Skipped",
+  left: "Left",
+});
+export type QueueStatus = (typeof QueueStatuses.values)[number];
+
 /** How a visit ended. */
 export const Dispositions = defineEnum({
   discharged: "Discharged",
