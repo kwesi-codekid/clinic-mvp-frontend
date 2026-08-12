@@ -27,6 +27,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 import { Input } from "~/components/ui/input";
 import { NOTE_SEARCH_MIN_LENGTH } from "~/lib/api/notes";
 import { NoteSearchModes } from "~/models/enums";
+import { richTextToPlain } from "~/lib/rich-text";
 import type { NoteMatch } from "~/models/consultation";
 import type { NoteSearchData } from "~/routes/resource-note-search";
 
@@ -53,8 +54,12 @@ function MatchRow({ match }: { match: NoteMatch }) {
         <p className="font-mono text-xs text-muted-foreground">{match.folderNumber}</p>
       )}
 
+      {/* A one-line preview, so the note's markup is flattened rather than
+          rendered — a panel of headings and lists is not a summary. */}
       {match.presentingComplaint && (
-        <p className="text-sm text-muted-foreground">{match.presentingComplaint}</p>
+        <p className="line-clamp-3 text-sm text-muted-foreground">
+          {richTextToPlain(match.presentingComplaint)}
+        </p>
       )}
 
       {codes.length > 0 && (

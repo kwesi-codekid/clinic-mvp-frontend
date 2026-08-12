@@ -27,6 +27,7 @@ import {
   CheckIcon,
   ChevronRightIcon,
   ClockIcon,
+  HeartPulseIcon,
   Loader2Icon,
   PhoneCallIcon,
   RotateCcwIcon,
@@ -40,7 +41,7 @@ import { toast } from "sonner";
 import { avatarTint, initialsOf, StatusPill } from "~/components/directory";
 import { PriorityPill } from "~/components/visit-header";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
-import { Button } from "~/components/ui/button";
+import { Button, buttonVariants } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import {
   Table,
@@ -122,8 +123,23 @@ function useQueueFetcher() {
   return fetcher;
 }
 
+/**
+ * Where the work happens once a patient has been called.
+ *
+ * Calling someone is only half of serving them; the other half is a screen. At
+ * OPD the nurse takes the observations before the clinician sees the patient,
+ * so a called patient's row links straight to the vitals sheet rather than
+ * making her find the visit first. Stations without a capture screen of their
+ * own are absent here, and their rows are unchanged.
+ */
+const WORK_SCREEN: Partial<Record<Station, { path: string; label: string }>> = {
+  vitals: { path: "vitals", label: "Record vitals" },
+  consulting: { path: "vitals", label: "Record vitals" },
+};
+
 /** The actions available against one entry, given where it stands. */
 function RowActions({ entry }: { entry: QueueEntry }) {
+  const work = WORK_SCREEN[entry.station];
   const fetcher = useQueueFetcher();
   const busy = fetcher.state !== "idle";
 
@@ -153,7 +169,23 @@ function RowActions({ entry }: { entry: QueueEntry }) {
 
       {entry.status === "in_service" && (
         <>
-          <Button type="submit" name="intent" value="complete" size="sm" disabled={busy}>
+          {work && (
+            <Link
+              to={`/visits/${entry.visitId}/${work.path}`}
+              className={buttonVariants({ size: "sm" })}
+            >
+              <HeartPulseIcon />
+              {work.label}
+            </Link>
+          )}
+          <Button
+            type="submit"
+            name="intent"
+            value="complete"
+            size="sm"
+            variant={work ? "outline" : "default"}
+            disabled={busy}
+          >
             {busy ? <Loader2Icon className="animate-spin" /> : <CheckIcon />}
             Done
           </Button>

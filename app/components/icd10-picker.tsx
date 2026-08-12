@@ -29,8 +29,8 @@ import {
   CommandList,
 } from "~/components/ui/command";
 import { Field, FieldDescription, FieldLabel } from "~/components/ui/field";
-import { Input } from "~/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
+import { RichTextEditor } from "~/components/ui/rich-text-editor";
 import {
   Select,
   SelectContent,
@@ -38,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
+import { isRichTextEmpty } from "~/lib/rich-text";
 import { cn } from "~/lib/utils";
 import { DiagnosisTypes, type DiagnosisType } from "~/models/enums";
 import type { Diagnosis, DiagnosisInput, Icd10Entry } from "~/models/consultation";
@@ -68,7 +69,9 @@ export function toDiagnosisInput(draft: DiagnosisDraft): DiagnosisInput {
     description: draft.description,
     type: draft.type,
     isPrimary: draft.isPrimary,
-    notes: draft.notes?.trim() || undefined,
+    // An emptied editor still leaves `<p></p>` behind — markup with nothing in
+    // it is not a note.
+    notes: isRichTextEmpty(draft.notes) ? undefined : draft.notes,
   };
 }
 
@@ -310,11 +313,14 @@ export function Icd10Picker({
 
                 <Field>
                   <FieldLabel htmlFor={`diagnosis-notes-${index}`}>Note</FieldLabel>
-                  <Input
+                  {/* Unnamed: the row posts its own hidden field below, in the
+                      parallel-list order the action reads. */}
+                  <RichTextEditor
                     id={`diagnosis-notes-${index}`}
-                    value={draft.notes ?? ""}
-                    onChange={(event) => update(index, { notes: event.target.value })}
+                    defaultValue={draft.notes}
+                    onChange={(html) => update(index, { notes: html })}
                     placeholder="Optional detail"
+                    minRows={2}
                     disabled={disabled}
                   />
                 </Field>

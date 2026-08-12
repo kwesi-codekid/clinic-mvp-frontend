@@ -22,6 +22,11 @@ export default [
     // embedded in the visit page.
     route("visits/:visitId/vitals", "routes/visit-vitals.tsx"),
     route("visits/:visitId/consultation", "routes/visit-consultation.tsx"),
+    route("visits/:visitId/lab", "routes/visit-lab.tsx"),
+    // The laboratory module: the bench worklist, and one order's lifecycle —
+    // collection, per-item results, verification, rejection.
+    route("laboratory", "routes/laboratory.tsx"),
+    route("laboratory/orders/:orderId", "routes/lab-order.tsx"),
     // Queues: OPD is the `consulting` station's worklist; every other station
     // is the same screen under `/queues/:station`. `queues/actions` is the
     // write-only resource route the worklist posts to, and must outrank
@@ -37,6 +42,7 @@ export default [
     route("resources/icd10", "routes/resource-icd10.tsx"),
     route("resources/vitals-preview", "routes/resource-vitals-preview.tsx"),
     route("resources/note-search", "routes/resource-note-search.tsx"),
+    route("resources/lab-tests", "routes/resource-lab-tests.tsx"),
     // Unbuilt sidebar modules land on a placeholder until their route exists.
     route("*", "routes/coming-soon.tsx"),
   ]),

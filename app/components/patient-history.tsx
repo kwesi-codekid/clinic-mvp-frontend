@@ -6,6 +6,11 @@
  * and on the visit screen, where it is the context a clinician reads before
  * seeing the patient — when were they last here, and what was found.
  *
+ * The scope is enforced here, not merely requested upstream: the loaders ask
+ * the API for one patient's visits, but a row belonging to anyone else is
+ * dropped before it renders. Another patient's attendance appearing in this
+ * card is a privacy breach, so the guarantee cannot live on the API alone.
+ *
  * The diagnosis line is joined from the consultations by `visitId` rather
  * than read off the visit, because a {@link VisitSummary} carries neither the
  * note nor a disposition — and what history is read *for* is what was
@@ -14,7 +19,7 @@
  */
 
 import { format } from "date-fns";
-import { HistoryIcon } from "lucide-react";
+import { ChevronRightIcon, HistoryIcon } from "lucide-react";
 import { Link } from "react-router";
 
 import { StatusPill } from "~/components/directory";
@@ -22,6 +27,7 @@ import { VisitStatusPill } from "~/components/visit-header";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { VisitTypes } from "~/models/enums";
 import type { Consultation, Diagnosis } from "~/models/consultation";
+import type { ObjectId } from "~/models/primitives";
 import type { VisitSummary } from "~/models/visit";
 
 /**
@@ -45,13 +51,16 @@ function orderedDiagnoses(note: Consultation): Diagnosis[] {
 }
 
 export function PatientHistory({
+  patientId,
   visits,
   total,
   consultations,
   title = "Attendance history",
   emptyMessage = "No attendance on record yet.",
 }: {
-  /** Past attendances, newest first. The caller decides scope and limit. */
+  /** Whose history this is. Rows for any other patient are never rendered. */
+  patientId: ObjectId;
+  /** Past attendances, newest first. The caller decides sort and limit. */
   visits: VisitSummary[];
   /** Attendances in that scope altogether — the footer's honesty when it exceeds the list. */
   total: number;
@@ -62,6 +71,11 @@ export function PatientHistory({
 }) {
   const noteByVisit = newestNoteByVisit(consultations);
 
+  const own = visits.filter((visit) => visit.patient.id === patientId);
+  // A dropped row means the server counted strangers too, so its total is
+  // no longer this patient's — fall back to what is actually shown.
+  const ownTotal = own.length === visits.length ? total : own.length;
+
   return (
     <Card>
       <CardHeader>
@@ -71,61 +85,74 @@ export function PatientHistory({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {visits.length === 0 ? (
+        {own.length === 0 ? (
           <p className="text-sm text-muted-foreground">{emptyMessage}</p>
         ) : (
           <>
             <ul className="divide-y">
-              {visits.map((visit) => {
+              {own.map((visit) => {
                 const note = noteByVisit.get(visit.id);
                 const diagnoses = note ? orderedDiagnoses(note) : [];
 
                 return (
-                  <li key={visit.id} className="space-y-1 py-3 first:pt-0 last:pb-0">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                      <Link
-                        to={`/visits/${visit.id}`}
-                        className="font-medium hover:underline"
-                        suppressHydrationWarning
-                      >
-                        {format(new Date(visit.arrivedAt), "d MMM yyyy")}
-                      </Link>
-                      <span className="text-muted-foreground">
-                        {VisitTypes.label(visit.type)} ·{" "}
-                        <span className="font-mono text-xs">{visit.visitNumber}</span>
-                      </span>
-                      <VisitStatusPill status={visit.status} />
-                      {visit.isNewPatient && <StatusPill tone="muted">First attendance</StatusPill>}
+                  // The whole row opens the visit — the overlay link keeps the
+                  // markup free of nested anchors while the pills stay inert.
+                  <li
+                    key={visit.id}
+                    className="group relative flex items-start gap-3 py-3 first:pt-0 last:pb-0"
+                  >
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                        <span className="font-medium group-hover:underline" suppressHydrationWarning>
+                          {format(new Date(visit.arrivedAt), "d MMM yyyy")}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {VisitTypes.label(visit.type)} ·{" "}
+                          <span className="font-mono text-xs">{visit.visitNumber}</span>
+                        </span>
+                        <VisitStatusPill status={visit.status} />
+                        {visit.isNewPatient && (
+                          <StatusPill tone="muted">First attendance</StatusPill>
+                        )}
+                      </div>
+
+                      {visit.chiefComplaint && (
+                        <p className="text-sm text-muted-foreground">{visit.chiefComplaint}</p>
+                      )}
+
+                      {diagnoses.length > 0 && (
+                        <p className="text-sm">
+                          {diagnoses.map((diagnosis, index) => (
+                            <span key={diagnosis.icd10Code}>
+                              {index > 0 && <span className="text-muted-foreground"> · </span>}
+                              <span className={diagnosis.isPrimary ? "font-medium" : undefined}>
+                                {diagnosis.description}
+                              </span>
+                              <span className="font-mono text-xs text-muted-foreground">
+                                {" "}
+                                {diagnosis.icd10Code}
+                              </span>
+                            </span>
+                          ))}
+                        </p>
+                      )}
                     </div>
 
-                    {visit.chiefComplaint && (
-                      <p className="text-sm text-muted-foreground">{visit.chiefComplaint}</p>
-                    )}
+                    <ChevronRightIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
 
-                    {diagnoses.length > 0 && (
-                      <p className="text-sm">
-                        {diagnoses.map((diagnosis, index) => (
-                          <span key={diagnosis.icd10Code}>
-                            {index > 0 && <span className="text-muted-foreground"> · </span>}
-                            <span className={diagnosis.isPrimary ? "font-medium" : undefined}>
-                              {diagnosis.description}
-                            </span>
-                            <span className="font-mono text-xs text-muted-foreground">
-                              {" "}
-                              {diagnosis.icd10Code}
-                            </span>
-                          </span>
-                        ))}
-                      </p>
-                    )}
+                    <Link
+                      to={`/visits/${visit.id}`}
+                      aria-label={`Open visit ${visit.visitNumber}`}
+                      className="absolute inset-0"
+                    />
                   </li>
                 );
               })}
             </ul>
 
-            {total > visits.length && (
+            {ownTotal > own.length && (
               <p className="mt-3 border-t pt-3 text-xs text-muted-foreground">
-                Showing the last {visits.length} of {total} attendances.
+                Showing the last {own.length} of {ownTotal} attendances.
               </p>
             )}
           </>

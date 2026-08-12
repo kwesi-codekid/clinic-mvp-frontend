@@ -24,6 +24,7 @@ import {
   BanIcon,
   DoorClosedIcon,
   FileTextIcon,
+  FlaskConicalIcon,
   HeartPulseIcon,
   Loader2Icon,
   NotebookPenIcon,
@@ -688,12 +689,20 @@ export default function VisitPage({ loaderData, actionData }: Route.ComponentPro
             <NotebookPenIcon />
             Consultation note
           </Link>
+          <Link
+            to={`/visits/${visit.id}/lab`}
+            className={buttonVariants({ variant: "outline" })}
+          >
+            <FlaskConicalIcon />
+            Lab orders
+          </Link>
         </CardContent>
       </Card>
 
       {/* The patient's other attendances — the context read before this one.
           This visit itself is excluded: the rest of the screen *is* it. */}
       <PatientHistory
+        patientId={visit.patient.id}
         visits={pastVisits}
         total={pastTotal}
         consultations={consultations}

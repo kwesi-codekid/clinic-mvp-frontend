@@ -438,3 +438,59 @@ export const SpecimenTypes = defineEnum({
   none: "None",
 });
 export type SpecimenType = (typeof SpecimenTypes.values)[number];
+
+/**
+ * Where one lab test — or the order holding several — stands.
+ *
+ * Declared in lifecycle order: ordered → collected → resulted → verified.
+ * `rejected` is a **specimen** verdict (haemolysed, insufficient, mislabelled),
+ * not a result: a fresh specimen restarts that item. An order's own status is
+ * its **least-advanced** item, so one pending test holds the whole order back.
+ *
+ * TASK.md's enum table predates the live spec, which adds `cancelled`.
+ */
+export const LabOrderStatuses = defineEnum({
+  ordered: "Ordered",
+  collected: "Collected",
+  resulted: "Resulted",
+  verified: "Verified",
+  rejected: "Rejected",
+  cancelled: "Cancelled",
+});
+export type LabOrderStatus = (typeof LabOrderStatuses.values)[number];
+
+/** How an analyte's value is captured: a number, free text, or one of a list. */
+export const LabResultTypes = defineEnum({
+  numeric: "Numeric",
+  text: "Text",
+  select: "Choice",
+});
+export type LabResultType = (typeof LabResultTypes.values)[number];
+
+/**
+ * How a result sits against its reference range.
+ *
+ * Computed by the API — never typed by the bench. Unlike `VitalFlagSeverities`
+ * this set **does** include `normal`, because a lab report states every value's
+ * standing explicitly; an unflagged lab value would read as ungraded, not fine.
+ * `abnormal` is the non-numeric verdict (a positive film, a growth on culture).
+ */
+export const LabResultFlags = defineEnum({
+  critical_low: "Critically low",
+  critical_high: "Critically high",
+  low: "Low",
+  high: "High",
+  abnormal: "Abnormal",
+  normal: "Normal",
+});
+export type LabResultFlag = (typeof LabResultFlags.values)[number];
+
+/** The flags that mean the ordering clinician is being paged over the socket. */
+export function isCriticalLabFlag(flag: LabResultFlag): boolean {
+  return flag === "critical_low" || flag === "critical_high";
+}
+
+/** Anything worth a coloured pill — everything except `normal`. */
+export function isAbnormalLabFlag(flag: LabResultFlag): boolean {
+  return flag !== "normal";
+}

@@ -44,10 +44,11 @@ import { Button, buttonVariants } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
-import { Textarea } from "~/components/ui/textarea";
+import { RichText, RichTextEditor } from "~/components/ui/rich-text-editor";
 import { FlagList } from "~/components/vital-flags";
 import { VisitHeader } from "~/components/visit-header";
 import { ApiError, describeApiError } from "~/lib/api/client";
+import { isRichTextEmpty, richTextToPlain } from "~/lib/rich-text";
 import {
   amendConsultation,
   getVisitConsultation,
@@ -126,10 +127,22 @@ function text(form: FormData, key: string): string | undefined {
   return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : undefined;
 }
 
+/**
+ * The same, for a field the editor posts.
+ *
+ * An emptied Tiptap surface posts markup with no words in it — `<p></p>` is
+ * not the empty string, and storing it would make an untouched section read as
+ * written and pass the checks that stop a blank note being signed.
+ */
+function richText(form: FormData, key: string): string | undefined {
+  const raw = text(form, key);
+  return raw && !isRichTextEmpty(raw) ? raw : undefined;
+}
+
 function readNarrative(form: FormData): ConsultationNarrative {
   const narrative: ConsultationNarrative = {};
   for (const { field } of NOTE_SECTIONS) {
-    narrative[field] = text(form, field);
+    narrative[field] = richText(form, field);
   }
   return narrative;
 }
@@ -151,6 +164,7 @@ function readDiagnoses(form: FormData): DiagnosisInput[] {
     if (typeof code !== "string" || code.trim() === "") return [];
     const type = types[index];
     const note = notes[index];
+    const written = typeof note === "string" ? note.trim() : "";
 
     return [
       {
@@ -158,7 +172,7 @@ function readDiagnoses(form: FormData): DiagnosisInput[] {
         description: typeof descriptions[index] === "string" ? descriptions[index] : undefined,
         type: DiagnosisTypes.is(type) ? type : undefined,
         isPrimary: index === primaryIndex,
-        notes: typeof note === "string" && note.trim() !== "" ? note.trim() : undefined,
+        notes: isRichTextEmpty(written) ? undefined : written,
       },
     ];
   });
@@ -192,7 +206,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   try {
     if (intent === "amend") {
       const noteId = form.get("noteId");
-      const reason = text(form, "reason");
+      const reason = richText(form, "reason");
       if (typeof noteId !== "string" || noteId === "") {
         return fail("There is no note to amend.");
       }
@@ -238,7 +252,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 /** The note as it reads back, once signed. */
 function NoteReadView({ note }: { note: Consultation }) {
-  const written = NOTE_SECTIONS.filter(({ field }) => (note[field] ?? "").trim() !== "");
+  const written = NOTE_SECTIONS.filter(({ field }) => !isRichTextEmpty(note[field]));
 
   return (
     <div className="space-y-5">
@@ -250,7 +264,7 @@ function NoteReadView({ note }: { note: Consultation }) {
             <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               {label}
             </h3>
-            <p className="text-sm whitespace-pre-wrap">{note[field]}</p>
+            <RichText html={note[field] ?? ""} />
           </div>
         ))
       )}
@@ -276,7 +290,7 @@ function NoteReadView({ note }: { note: Consultation }) {
                 </div>
                 <p className="pt-1 text-sm font-medium">{diagnosis.description}</p>
                 {diagnosis.notes && (
-                  <p className="text-sm text-muted-foreground">{diagnosis.notes}</p>
+                  <RichText html={diagnosis.notes} className="text-muted-foreground" />
                 )}
                 <p className="pt-1 text-xs text-muted-foreground">
                   DHIMS2: {diagnosis.dhims2Group}
@@ -324,7 +338,7 @@ function AmendmentTrail({ note }: { note: Consultation }) {
                 {format(new Date(amendment.at), "d MMM yyyy, HH:mm")}
                 {amendment.byName ? ` · ${amendment.byName}` : ""}
               </p>
-              <p>{amendment.reason}</p>
+              <RichText html={amendment.reason} />
             </li>
           ))}
         </ol>
@@ -373,6 +387,14 @@ export default function VisitConsultationPage({ loaderData, actionData }: Route.
           className={buttonVariants({ variant: "outline", size: "sm" })}
         >
           Vitals
+        </Link>
+        {/* Order-from-consultation (T6.2): the lab screen carries the order
+            form and reads verified results back beside this note. */}
+        <Link
+          to={`/visits/${visit.id}/lab`}
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+        >
+          Lab
         </Link>
       </VisitHeader>
 
@@ -510,11 +532,13 @@ export default function VisitConsultationPage({ loaderData, actionData }: Route.
                   <CardContent>
                     <Field>
                       <FieldLabel htmlFor="note-reason">Reason for the correction</FieldLabel>
-                      <Input
+                      <RichTextEditor
                         id="note-reason"
                         name="reason"
+                        minRows={2}
                         placeholder="Lab result returned after signing; assessment revised."
-                        aria-invalid={fieldError("reason") ? true : undefined}
+                        disabled={busy}
+                        invalid={fieldError("reason") !== undefined}
                       />
                       <FieldError>{fieldError("reason")}</FieldError>
                     </Field>
@@ -533,12 +557,13 @@ export default function VisitConsultationPage({ loaderData, actionData }: Route.
                   {NOTE_SECTIONS.map(({ field, label, hint }) => (
                     <Field key={field}>
                       <FieldLabel htmlFor={`note-${field}`}>{label}</FieldLabel>
-                      <Textarea
+                      <RichTextEditor
                         id={`note-${field}`}
                         name={field}
-                        rows={field === "presentingComplaint" ? 2 : 3}
+                        minRows={field === "presentingComplaint" ? 2 : 3}
                         defaultValue={note?.[field] ?? ""}
-                        aria-invalid={fieldError(field) ? true : undefined}
+                        disabled={busy}
+                        invalid={fieldError(field) !== undefined}
                       />
                       <FieldDescription>{hint}</FieldDescription>
                       <FieldError>{fieldError(field)}</FieldError>
@@ -638,7 +663,10 @@ export default function VisitConsultationPage({ loaderData, actionData }: Route.
 
         {/* T5.3 — beside the note, not buried under it. */}
         <aside className="space-y-6 lg:sticky lg:top-4 lg:self-start">
-          <SimilarNotes seed={note?.presentingComplaint ?? visit.chiefComplaint} />
+          {/* The index searches words, not markup. */}
+          <SimilarNotes
+            seed={richTextToPlain(note?.presentingComplaint) || visit.chiefComplaint}
+          />
         </aside>
       </div>
     </div>

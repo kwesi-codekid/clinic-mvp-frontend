@@ -515,6 +515,7 @@ export default function PatientFolderPage({ loaderData }: Route.ComponentProps) 
           The open visit appears here too — the history is the record, and the
           banner above is merely today's pointer into it. */}
       <PatientHistory
+        patientId={patient.id}
         visits={visitHistory.items}
         total={visitHistory.meta.total}
         consultations={consultations}

@@ -107,8 +107,9 @@ app/
 | Phase 3 — Visit | **Done** — `models/visit.ts`, `lib/api/visits.ts`, `visit-header.tsx`, `station-timeline.tsx`, `visits.tsx`, `visit-new.tsx`, `visit-detail.tsx` with move/close/cancel |
 | Phase 4 — Queues | **Done** — `models/queue.ts` (+tests), `lib/api/queues.ts`, `station-queue.tsx`, `opd.tsx`, `queue-actions.tsx`, polling hook |
 | Phase 5 — Clinical capture | **Done** — `models/vitals.ts`, `models/consultation.ts`, `lib/api/{vitals,consultations,notes}.ts`, `vital-flags.tsx`, `icd10-picker.tsx`, `similar-notes.tsx`, `visit-vitals.tsx`, `visit-consultation.tsx`, and three `resources/*` routes |
+| Phase 6 — Lab | **Done** — `models/lab.ts` (+tests), `lib/api/lab.ts`, `lab-results.tsx`, `lab-test-picker.tsx`, `laboratory.tsx` (bench + station queue tabs), `lab-order.tsx` (collect, per-item results/verify/reject), `visit-lab.tsx` (order-from-consultation, verified-results readback), `resources/lab-tests` |
 | Phase 14 — Admin | **T14.1 done out of order** (`staff.tsx`, `staff-drawer.tsx`, `lib/api/staff.ts`). **T14.2 partly** — `models/facility.ts` and `lib/api/facility.ts` exist; the root loader still does not fetch `GET /facility`, which Phases 6/7/11/15 need for feature gating. `lib/api/platform.ts` covers T14.3's health call |
-| Phases 6–13, 15 | Not started |
+| Phases 7–13, 15 | Not started |
 
 `app/lib/api/*` already targets the current paths (`/patients/check-duplicates`, `/visits/open`, `/auth/logout`) — the code kept pace with the API; this plan is what had drifted.
 
@@ -141,9 +142,9 @@ app/
 | ~~`VitalFlagSeverities`~~ ✅ | info, warning, critical | T5.1 — **done** |
 | ~~`DiagnosisTypes`~~ ✅ | provisional, final, differential | T5.2 — **done** |
 | ~~`NoteSearchModes`~~ ✅ | semantic, lexical | T5.3 — **done** |
-| `LabOrderStatuses` | ordered, collected, resulted, verified, rejected | T6.2 |
-| `LabResultTypes` | numeric, text, select | T6.2 |
-| `LabResultFlags` | low, normal, high, critical_low, critical_high, abnormal | T6.2 |
+| ~~`LabOrderStatuses`~~ ✅ | ordered, collected, resulted, verified, rejected, **cancelled** (live spec adds it) | T6.2 — **done** |
+| ~~`LabResultTypes`~~ ✅ | numeric, text, select | T6.2 — **done** |
+| ~~`LabResultFlags`~~ ✅ | low, normal, high, critical_low, critical_high, abnormal | T6.2 — **done** |
 | `PrescriptionItemStatuses` | pending, dispensed, partially_dispensed, out_of_stock, substituted | T7.2 |
 | `ProductCategories` | drug, consumable, reagent, equipment | T7.1 |
 | `StockMovementTypes` | receipt, dispense, adjustment, wastage, expiry, return, stock_take | T7.1 |
@@ -308,14 +309,14 @@ Parallelisable once Phase 3 lands.
 
 ---
 
-## Phase 6 — Lab (L2)
+## Phase 6 — Lab (L2) ✅
 
-### T6.1 — Lab catalogue models
+### T6.1 — Lab catalogue models ✅
 - **Defines**: `ReferenceRange` (L0), `Analyte` → `ReferenceRange`, `LabTest` → `ObjectId, Analyte`.
 - **Blocked by**: T0.1
 - **Endpoints**: `GET /lab/tests`, **`GET /lab/tests/{id}`**.
 
-### T6.2 — Lab order lifecycle
+### T6.2 — Lab order lifecycle ✅ (polling until T0.5)
 - **Defines**: `LabResultValue` (L0), `LabOrderItem`, `LabOrder`; `CreateLabOrder`, `CollectSpecimen`, `EnterResults`, `RejectSpecimen`.
 - **Blocked by**: T6.1, T3.1, T4.2, T0.5
 - **Endpoints**: `POST /lab/orders`, `GET /lab/orders`, `GET /lab/orders/{id}`, `POST /lab/orders/{id}/collect`, **`GET /lab/worklist`**, and **per-item** actions:
@@ -633,7 +634,7 @@ What moved since this plan was first written. Anything already built against the
 
 1. **Socket contract** — the events are named in endpoint descriptions but not specified anywhere. Needed: the connection URL and namespace, how the socket authenticates (token in `auth` handshake?), the exact payload of `queue:updated`, `queue:counters`, `lab:ordered`, `lab:updated`, `payment:received`, and whether a critical-vitals event has a name we can subscribe to.
 2. `POST /patients/merge` — is it reversible? The UI copy depends on the answer.
-3. **`requestId` on errors** — the spec's error envelope is now `{code, message, details}`. Is `requestId` still returned? Support copy currently promises it.
+3. ~~**`requestId` on errors**~~ — **answered 2026-08-12**: the deployed backend still returns `error.requestId` (verified on `401`s from `/lab/*`) even though the spec's envelope no longer documents it. Support copy can keep promising it; `ApiError` already reads it.
 4. `POST /maternity/postnatal/{id}` — is `{id}` the delivery, the patient, or a pre-created postnatal record? The write is `{id}`-scoped but `GET /maternity/postnatal` is a plain list.
 5. **Ward drug chart vs pharmacy** — `MedicationAdministration.drugName` is free text with no `productId`. Is an inpatient dose meant to decrement stock, and if so through which endpoint?
 6. Rate limits / token TTL on `expiresIn` — needed to tune the silent-refresh window.
