@@ -267,7 +267,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
             <Button
               type="submit"
               disabled={busy}
-              className="h-10 w-full rounded-full bg-[#3bb0b9] text-xs font-bold tracking-[0.14em] text-white shadow-[0_14px_28px_-12px_rgba(9,78,84,0.65)] hover:bg-[#2fa5ae]"
+              className="h-10 w-full rounded-full bg-[#3bb0b9] text-xs font-medium tracking-[0.14em] text-white shadow-[0_14px_28px_-12px_rgba(9,78,84,0.65)] hover:bg-[#2fa5ae]"
             >
               {busy && <Loader2Icon className="animate-spin" />}
               SIGN IN
