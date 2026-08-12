@@ -422,6 +422,73 @@ export const AdministrationRoutes = defineEnum({
 });
 export type AdministrationRoute = (typeof AdministrationRoutes.values)[number];
 
+/**
+ * Where a whole prescription stands.
+ *
+ * The prescription's own status is a rollup of its items: it reads
+ * `partially_dispensed` while any item is still outstanding, so it says
+ * whether the patient can leave the counter, not what happened to any one
+ * drug. Per-drug outcomes are {@link PrescriptionItemStatuses}.
+ */
+export const PrescriptionStatuses = defineEnum({
+  pending: "Pending",
+  partially_dispensed: "Partly dispensed",
+  dispensed: "Dispensed",
+  cancelled: "Cancelled",
+});
+export type PrescriptionStatus = (typeof PrescriptionStatuses.values)[number];
+
+/**
+ * What happened to one prescribed drug.
+ *
+ * Three of these are endings the counter reaches on purpose, not failures:
+ * `partially_dispensed` is what a half-full shelf produces, `out_of_stock`
+ * closes the item so the patient can be sent to buy outside (and feeds the
+ * low-stock report), and `substituted` records that something else was given
+ * — with the original drug and the reason kept on the record.
+ */
+export const PrescriptionItemStatuses = defineEnum({
+  pending: "Pending",
+  partially_dispensed: "Partly dispensed",
+  dispensed: "Dispensed",
+  out_of_stock: "Out of stock",
+  substituted: "Substituted",
+  cancelled: "Cancelled",
+});
+export type PrescriptionItemStatus = (typeof PrescriptionItemStatuses.values)[number];
+
+/* -------------------------------------------------------------------------
+   Store & inventory
+   ------------------------------------------------------------------------- */
+
+/** What kind of thing the store holds. Only `drug` is prescribable. */
+export const ProductCategories = defineEnum({
+  drug: "Drug",
+  consumable: "Consumable",
+  reagent: "Reagent",
+  equipment: "Equipment",
+});
+export type ProductCategory = (typeof ProductCategories.values)[number];
+
+/**
+ * Why one line of the stock ledger exists.
+ *
+ * The ledger is append-only and every line carries a signed quantity —
+ * `receipt` and `return` bring stock in, `dispense`, `wastage` and `expiry`
+ * take it out, and `adjustment` and `stock_take` go either way. The sign on
+ * `StockMovement.quantity` is the authority; this only names the cause.
+ */
+export const StockMovementTypes = defineEnum({
+  receipt: "Receipt",
+  dispense: "Dispensed",
+  adjustment: "Adjustment",
+  wastage: "Wastage",
+  expiry: "Expired",
+  return: "Return",
+  stock_take: "Stock take",
+});
+export type StockMovementType = (typeof StockMovementTypes.values)[number];
+
 /* -------------------------------------------------------------------------
    Lab
    ------------------------------------------------------------------------- */

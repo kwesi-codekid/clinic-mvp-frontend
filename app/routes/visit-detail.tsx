@@ -28,6 +28,7 @@ import {
   HeartPulseIcon,
   Loader2Icon,
   NotebookPenIcon,
+  PillIcon,
   RouteIcon,
   StethoscopeIcon,
 } from "lucide-react";
@@ -695,6 +696,13 @@ export default function VisitPage({ loaderData, actionData }: Route.ComponentPro
           >
             <FlaskConicalIcon />
             Lab orders
+          </Link>
+          <Link
+            to={`/visits/${visit.id}/prescription`}
+            className={buttonVariants({ variant: "outline" })}
+          >
+            <PillIcon />
+            Prescription
           </Link>
         </CardContent>
       </Card>

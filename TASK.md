@@ -108,12 +108,13 @@ app/
 | Phase 4 — Queues | **Done** — `models/queue.ts` (+tests), `lib/api/queues.ts`, `station-queue.tsx`, `opd.tsx`, `queue-actions.tsx`, polling hook |
 | Phase 5 — Clinical capture | **Done** — `models/vitals.ts`, `models/consultation.ts`, `lib/api/{vitals,consultations,notes}.ts`, `vital-flags.tsx`, `icd10-picker.tsx`, `similar-notes.tsx`, `visit-vitals.tsx`, `visit-consultation.tsx`, and three `resources/*` routes |
 | Phase 6 — Lab | **Done** — `models/lab.ts` (+tests), `lib/api/lab.ts`, `lab-results.tsx`, `lab-test-picker.tsx`, `laboratory.tsx` (bench + station queue tabs), `lab-order.tsx` (collect, per-item results/verify/reject), `visit-lab.tsx` (order-from-consultation, verified-results readback), `resources/lab-tests` |
+| Phase 7 — Pharmacy & inventory | **Done** — `models/inventory.ts` + `models/pharmacy.ts` (both +tests), `lib/api/{inventory,pharmacy}.ts`, `dispensing.tsx`, `product-picker.tsx`, `stock-ledger.tsx`, `visit-prescription.tsx` (prescribing with allergy gate), `pharmacy.tsx` (counter + station queue tabs), `prescription.tsx` (per-item dispense/substitute/out-of-stock), `inventory.tsx` (stock, low-stock, expiring + valuation), `product-detail.tsx` (batches + adjust), `inventory-receive.tsx`, `inventory-suppliers.tsx`, `inventory-movements.tsx`, `resources/products` |
 | Phase 14 — Admin | **T14.1 done out of order** (`staff.tsx`, `staff-drawer.tsx`, `lib/api/staff.ts`). **T14.2 partly** — `models/facility.ts` and `lib/api/facility.ts` exist; the root loader still does not fetch `GET /facility`, which Phases 6/7/11/15 need for feature gating. `lib/api/platform.ts` covers T14.3's health call |
-| Phases 7–13, 15 | Not started |
+| Phases 8–13, 15 | Not started |
 
 `app/lib/api/*` already targets the current paths (`/patients/check-duplicates`, `/visits/open`, `/auth/logout`) — the code kept pace with the API; this plan is what had drifted.
 
-**Pattern established in Phase 5, reusable from here on**: live lookups go through read-only `resources/*` routes rather than actions on the screen that needs them. The access token lives in an httpOnly cookie so the browser cannot call the API directly, and a `GET` `fetcher.load()` answers a keystroke *without* revalidating the calling route. Two of the three wrap an API `POST` that writes nothing (`/vitals/preview`, `/analytics/notes/search`) — exposing them as `GET` is what keeps them off the revalidation path. Phases 6–8 need the same for lab analytes, drug lookup and price quotes.
+**Pattern established in Phase 5, reusable from here on**: live lookups go through read-only `resources/*` routes rather than actions on the screen that needs them. The access token lives in an httpOnly cookie so the browser cannot call the API directly, and a `GET` `fetcher.load()` answers a keystroke *without* revalidating the calling route. Two of the five wrap an API `POST` that writes nothing (`/vitals/preview`, `/analytics/notes/search`) — exposing them as `GET` is what keeps them off the revalidation path. `resources/lab-tests` (T6.2) and `resources/products` (T7.1) followed; Phase 8's price quote is the next one.
 
 ---
 
@@ -329,31 +330,47 @@ Parallelisable once Phase 3 lands.
 
 ---
 
-## Phase 7 — Pharmacy & inventory (L1 → L2)
+## Phase 7 — Pharmacy & inventory (L1 → L2) ✅
 
 `Product` is shared by both — model it once, in T7.1.
 
-### T7.1 — Product & stock models
+### T7.1 — Product & stock models ✅
 - **Defines**: `Product`, `StockBatch`, `StockMovement`, `Supplier`, `LowStockItem`, `ExpiringBatch`, `StockValuation`.
 - **Blocked by**: T0.1
 - **Endpoints**: `GET /inventory/products`, `GET /inventory/products/{id}`, `GET /inventory/products/{id}/batches`.
-- **Note**: `Product.label` is the pre-composed "generic, strength, brand" display string — use it rather than concatenating. `stockOnHand` and `belowReorderLevel` come live on the product.
+- **Deliverable**: `app/models/inventory.ts` (+tests), `app/lib/api/inventory.ts`, `app/components/product-picker.tsx`, and the `/resources/products` lookup route.
+- **Notes**:
+  - `Product.label` is the pre-composed "generic, strength, brand" display string — use it rather than concatenating. `stockOnHand` and `belowReorderLevel` come live on the product.
+  - `stockOnHand` is **optional** on the wire, so nothing treats a missing value as zero: "not looked up" and "none left" send a patient to two different places, and `StockLevel` renders them differently.
+  - The four new closed sets (`ProductCategories`, `StockMovementTypes`, `PrescriptionStatuses`, `PrescriptionItemStatuses`) went into `models/enums.ts` with the rest, not beside their models.
+  - `GET /inventory/products/{id}/batches` returns batches **in expiry order** — the order the pharmacy will dispense in — so `nextBatchOut()` is a find, not a sort, and the product page marks the box the counter should open next.
 
-### T7.2 — Prescribing & dispensing
+### T7.2 — Prescribing & dispensing ✅
 - **Defines**: `DispenseRecord` (L0), `PrescriptionItem`, `Prescription`; `PrescriptionItemInput`, `CreatePrescription`, `DispenseItem`, `SubstituteItem`.
 - **Blocked by**: T7.1, T5.2, T4.2
 - **Endpoints**: `POST /pharmacy/prescriptions`, `GET /pharmacy/prescriptions`, `GET /pharmacy/prescriptions/{id}`, **`GET /pharmacy/queue`**, and **per-item** actions:
   - `POST /pharmacy/prescriptions/{prescriptionId}/items/{itemId}/dispense`
   - `POST /pharmacy/prescriptions/{prescriptionId}/items/{itemId}/substitute`
   - **`POST /pharmacy/prescriptions/{prescriptionId}/items/{itemId}/out-of-stock`**
-- **Deliverable**: prescribing form (drug → dose → `Frequency` → duration → `Route`, with live `stockOnHand`), dispense screen supporting **partial** dispense (`quantityPrescribed` vs `quantityDispensed`), substitution with reason, and an explicit out-of-stock outcome. Allergy check against `Patient.allergies` before submit.
-- **Note**: same per-item shape as lab. `out-of-stock` is a first-class result, not an error — it closes the item so the patient can be sent to buy outside, and it feeds the low-stock report.
+- **Deliverable**: `app/models/pharmacy.ts` (+tests), `app/lib/api/pharmacy.ts`, `app/components/dispensing.tsx`, `app/routes/visit-prescription.tsx` (prescribing form: drug → dose → `Frequency` → duration → `Route`, with live `stockOnHand`), `app/routes/pharmacy.tsx` (counter + station queue tabs), `app/routes/prescription.tsx` (per-item dispense supporting **partial**, substitution with reason, explicit out-of-stock).
+- **Notes**:
+  - same per-item shape as lab. `out-of-stock` is a first-class result, not an error — it closes the item so the patient can be sent to buy outside, and it feeds the low-stock report. It reads as a closed outcome in grey; red is kept for a cancelled line.
+  - **The allergy check is the client's alone.** The API does not check, and `allergyMatches()` matches drug *names*, not classes — it will miss a cephalosporin against a penicillin allergy. So the folder's allergies are on screen throughout (prescribing *and* dispensing), a name that matches blocks the submit button until the prescriber acknowledges it, and the copy says the highlight is not a safety system. `Visit.patient` is a `PatientSummary` and carries no allergies: both screens load the folder.
+  - **The quantity is derived, not typed twice.** `estimateQuantity()` previews what "1 tablet tds for 5 days" comes to while the line is written; `POST /pharmacy/prescriptions` does the same arithmetic on save and its answer is the record. `prn` and a zero-day course return `undefined` rather than a guess.
+  - Prescribing raises **no** charge — the bill follows what is dispensed — and the form says so where a clinician would assume the opposite.
+  - `GET /pharmacy/queue` carries ids, not patients. Rather than fetch a visit per row on every poll, the counter reads names off the `pharmacy` station queue it already loads for the other tab; a script whose patient is not in the corridor shows without a name.
 
-### T7.3 — Store / inventory screens
+### T7.3 — Store / inventory screens ✅
 - **Blocked by**: T7.1
 - **Endpoints**: **`POST /inventory/receive`** (productId, batchNumber, expiryDate, quantity, costPricePesewas, supplierId), **`POST /inventory/batches/{id}/adjust`**, `GET /inventory/movements`, `GET /inventory/low-stock`, `GET /inventory/expiring`, `GET /inventory/valuation`, `GET /inventory/suppliers`, `POST /inventory/suppliers`.
-- **Deliverable**: goods-receipt form, supplier list + add, stock ledger (append-only — read-only UI, no edit affordance), adjust/write-off/wastage action, valuation report with expired value split out, low-stock and expiring-batch alert lists.
-- **Note**: `StockMovement.quantity` is **negative for anything leaving the store** and `balanceAfter` is the running total — render the ledger as a signed column, not an absolute one.
+- **Deliverable**: `app/routes/inventory.tsx` (stock / low-stock / expiring tabs under the valuation), `app/routes/product-detail.tsx` (batches + the adjust action), `app/routes/inventory-receive.tsx`, `app/routes/inventory-suppliers.tsx`, `app/routes/inventory-movements.tsx`, `app/components/stock-ledger.tsx`.
+- **Notes**:
+  - `StockMovement.quantity` is **negative for anything leaving the store** and `balanceAfter` is the running total — the ledger renders as a signed column with a true minus sign, never an absolute one, and carries no edit affordance anywhere. A mistake is corrected by another movement.
+  - The adjust dialog offers a **direction plus a magnitude** and signs the number itself, and it deliberately does not offer `receipt` or `dispense`: stock arrives through the goods receipt and leaves through the counter, each of which records far more than an adjustment can.
+  - The goods-receipt cost is **per unit of issue**, not per delivery — typed in cedis, sent as integer pesewas through `tryToPesewas()`. The valuation is counted at it, so the field says so.
+  - The valuation splits expired value out rather than folding it into the total: expired stock is a write-off on a shelf, not stock the clinic has.
+  - The low-stock list sorts by how far below the reorder level a product has fallen (`compareLowStock`), because it is a buying list rather than an index.
+  - A `StockMovement` carries only a product id, so the unfiltered ledger fetches a catalogue page to put names on the lines; anything it does not cover renders as a link, never a guessed name.
 
 ---
 
