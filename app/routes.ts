@@ -5,6 +5,14 @@ export default [
   layout("routes/app-layout.tsx", [
     index("routes/home.tsx"),
     route("staff", "routes/staff.tsx"),
+    // Patients: the directory, then a page each for registering, reading,
+    // editing and merging a folder. Static segments outrank `:patientId`, so
+    // `/patients/new` never resolves to a folder id.
+    route("patients", "routes/patients.tsx"),
+    route("patients/new", "routes/patient-new.tsx"),
+    route("patients/:patientId", "routes/patient-detail.tsx"),
+    route("patients/:patientId/edit", "routes/patient-edit.tsx"),
+    route("patients/:patientId/merge", "routes/patient-merge.tsx"),
     // Unbuilt sidebar modules land on a placeholder until their route exists.
     route("*", "routes/coming-soon.tsx"),
   ]),

@@ -91,6 +91,69 @@ export const LicenceCouncils = defineEnum({
 export type LicenceCouncil = (typeof LicenceCouncils.values)[number];
 
 /* -------------------------------------------------------------------------
+   Patient
+   ------------------------------------------------------------------------- */
+
+/** Sex as recorded on the folder. The API's set is binary — this is the
+ *  clinical field that drives reference ranges, not gender identity. */
+export const Sexes = defineEnum({
+  male: "Male",
+  female: "Female",
+});
+export type Sex = (typeof Sexes.values)[number];
+
+/**
+ * How well the date of birth is known.
+ *
+ * Not an edge case: plenty of patients have no birth record, so the folder
+ * carries an estimate and says so. This value is what `PatientAge.accuracy`
+ * reports back, and what makes `PatientAge.display` authoritative.
+ */
+export const DobAccuracies = defineEnum({
+  exact: "Exact date",
+  year_only: "Year of birth only",
+  estimated_age: "Estimated age",
+});
+export type DobAccuracy = (typeof DobAccuracies.values)[number];
+
+export const MaritalStatuses = defineEnum({
+  single: "Single",
+  married: "Married",
+  divorced: "Divorced",
+  widowed: "Widowed",
+  unknown: "Unknown",
+});
+export type MaritalStatus = (typeof MaritalStatuses.values)[number];
+
+/** ABO/Rh group. `unknown` is a real, common answer at registration. */
+export const BloodGroups = defineEnum({
+  "A+": "A+",
+  "A-": "A−",
+  "B+": "B+",
+  "B-": "B−",
+  "AB+": "AB+",
+  "AB-": "AB−",
+  "O+": "O+",
+  "O-": "O−",
+  unknown: "Unknown",
+});
+export type BloodGroup = (typeof BloodGroups.values)[number];
+
+/**
+ * Mobile network, derived by the API from the phone prefix. Read-only —
+ * it is never posted; it exists to preselect the mobile money network at the
+ * till.
+ */
+export const MobileNetworks = defineEnum({
+  mtn: "MTN",
+  telecel: "Telecel",
+  airteltigo: "AirtelTigo",
+  glo: "Glo",
+  unknown: "Unknown",
+});
+export type MobileNetwork = (typeof MobileNetworks.values)[number];
+
+/* -------------------------------------------------------------------------
    Payer
    ------------------------------------------------------------------------- */
 
