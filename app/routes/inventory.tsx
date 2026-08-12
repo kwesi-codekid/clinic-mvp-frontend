@@ -36,7 +36,7 @@ import { Link, useNavigation, useSearchParams } from "react-router";
 import { PagerLink, StatusPill } from "~/components/directory";
 import { StockLevel } from "~/components/dispensing";
 import { buttonVariants } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Card } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import {
   Table,
@@ -122,70 +122,59 @@ export async function loader({ request }: Route.LoaderArgs) {
    Valuation
    ------------------------------------------------------------------------- */
 
+/**
+ * The stock take, as one strip: held minus expired is what the shelves are
+ * actually worth. The three figures sit side by side so the subtraction reads
+ * without being spelled out — a valuation that folds expired stock into the
+ * total overstates what the clinic has.
+ */
 function Valuation({ valuation }: { valuation: StockValuation }) {
   const expired = valuation.expiredPesewas > 0;
+  // Integer pesewas minus integer pesewas — no float maths on money.
+  const usableFormatted = formatPesewas(valuation.totalPesewas - valuation.expiredPesewas);
+
+  const cells = [
+    {
+      label: "Held at cost",
+      figure: valuation.totalFormatted,
+      tone: "",
+      note: `Across ${valuation.batches} ${valuation.batches === 1 ? "batch" : "batches"}.`,
+    },
+    {
+      label: "Of that, expired",
+      figure: valuation.expiredFormatted,
+      tone: expired ? "text-destructive" : "text-muted-foreground",
+      note: expired
+        ? "Already a write-off. It is stock on a shelf, not stock the clinic has."
+        : "Nothing on the shelves has expired.",
+    },
+    {
+      label: "Usable at cost",
+      figure: usableFormatted,
+      tone: "",
+      note: "What the shelves are actually worth.",
+    },
+  ];
 
   return (
-    <div className="grid gap-4 sm:grid-cols-3">
-      <Card size="sm" className="gap-2">
-        <CardHeader>
-          <CardDescription>Held at cost</CardDescription>
-          <CardTitle className="font-heading text-3xl font-semibold tracking-tight tabular-nums">
-            {valuation.totalFormatted}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-xs text-muted-foreground">
-          Across {valuation.batches} {valuation.batches === 1 ? "batch" : "batches"}.
-        </CardContent>
-      </Card>
-
-      <Card size="sm" className="gap-2">
-        <CardHeader>
-          <CardDescription>Of that, expired</CardDescription>
-          <CardTitle
+    <Card className="grid gap-0 divide-y overflow-hidden py-0 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+      {cells.map((cell) => (
+        <div key={cell.label} className="space-y-1 px-5 py-4">
+          <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+            {cell.label}
+          </p>
+          <p
             className={cn(
-              "font-heading text-3xl font-semibold tracking-tight tabular-nums",
-              expired && "text-destructive",
+              "font-mono text-2xl font-semibold tracking-tight tabular-nums",
+              cell.tone,
             )}
           >
-            {valuation.expiredFormatted}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-xs text-muted-foreground">
-          {expired
-            ? "Already a write-off. It is stock on the shelf, not stock the clinic has."
-            : "Nothing on the shelves has expired."}
-        </CardContent>
-      </Card>
-
-      <Card size="sm" className="justify-center gap-2">
-        <CardContent className="flex flex-col gap-2">
-          <Link
-            to="/inventory/receive"
-            className={buttonVariants({ variant: "default", size: "sm" })}
-          >
-            <PackagePlusIcon />
-            Receive a delivery
-          </Link>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              to="/inventory/movements"
-              className={buttonVariants({ variant: "outline", size: "sm" })}
-            >
-              <ScrollTextIcon />
-              Stock ledger
-            </Link>
-            <Link
-              to="/inventory/suppliers"
-              className={buttonVariants({ variant: "outline", size: "sm" })}
-            >
-              <TruckIcon />
-              Suppliers
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+            {cell.figure}
+          </p>
+          <p className="text-xs text-muted-foreground">{cell.note}</p>
+        </div>
+      ))}
+    </Card>
   );
 }
 
@@ -251,10 +240,10 @@ function ProductsTable({ products }: { products: readonly Product[] }) {
                 unitOfIssue={product.unitOfIssue}
               />
             </TableCell>
-            <TableCell className="px-4 py-2.5 text-sm tabular-nums">
+            <TableCell className="px-4 py-2.5 font-mono text-sm tabular-nums">
               {product.reorderLevel}
               {product.belowReorderLevel && (
-                <div>
+                <div className="font-sans">
                   <StatusPill tone="warning">Below reorder</StatusPill>
                 </div>
               )}
@@ -297,16 +286,21 @@ function LowStockTable({ items }: { items: readonly LowStockItem[] }) {
                 {item.name}
               </Link>
             </TableCell>
-            <TableCell className="px-4 py-2.5 text-sm tabular-nums">
+            <TableCell className="px-4 py-2.5 font-mono text-sm tabular-nums">
               <span className={cn(item.onHand <= 0 && "font-medium text-destructive")}>
-                {item.onHand} {item.unitOfIssue}
+                {item.onHand}
+                <span className="font-sans text-xs text-muted-foreground"> {item.unitOfIssue}</span>
               </span>
             </TableCell>
-            <TableCell className="px-4 py-2.5 text-sm tabular-nums">
+            <TableCell className="px-4 py-2.5 font-mono text-sm tabular-nums">
               {item.reorderLevel}
             </TableCell>
-            <TableCell className="px-4 py-2.5 text-sm tabular-nums">
-              {Math.max(item.reorderLevel - item.onHand, 0)} {item.unitOfIssue}
+            <TableCell className="px-4 py-2.5 font-mono text-sm font-medium tabular-nums">
+              {Math.max(item.reorderLevel - item.onHand, 0)}
+              <span className="font-sans text-xs font-normal text-muted-foreground">
+                {" "}
+                {item.unitOfIssue}
+              </span>
             </TableCell>
           </TableRow>
         ))}
@@ -340,9 +334,9 @@ function ExpiringTable({ batches }: { batches: readonly ExpiringBatch[] }) {
           <TableRow key={batch.id}>
             <TableCell className="px-4 py-2.5 text-sm">{batch.productName}</TableCell>
             <TableCell className="px-4 py-2.5">
-              <span className="font-mono text-xs">{batch.batchNumber}</span>
-              <div className="text-xs text-muted-foreground tabular-nums">
-                {batch.quantityRemaining} left
+              <span className="font-mono text-xs font-medium">{batch.batchNumber}</span>
+              <div className="text-xs text-muted-foreground">
+                <span className="font-mono tabular-nums">{batch.quantityRemaining}</span> left
               </div>
             </TableCell>
             <TableCell className="px-4 py-2.5 text-sm" suppressHydrationWarning>
@@ -353,7 +347,7 @@ function ExpiringTable({ batches }: { batches: readonly ExpiringBatch[] }) {
                 </StatusPill>
               </div>
             </TableCell>
-            <TableCell className="px-4 py-2.5 text-sm tabular-nums">
+            <TableCell className="px-4 py-2.5 font-mono text-sm font-medium tabular-nums">
               {formatPesewas(batch.valueAtCostPesewas)}
             </TableCell>
           </TableRow>
@@ -424,11 +418,36 @@ export default function InventoryPage({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="font-heading text-2xl font-semibold tracking-tight">Inventory</h1>
-        <p className="text-sm text-muted-foreground">
-          What the store holds, what needs buying, and what expires before it can be used.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="font-heading text-2xl font-semibold tracking-tight">Inventory</h1>
+          <p className="text-sm text-muted-foreground">
+            What the store holds, what needs buying, and what expires before it can be used.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/inventory/movements"
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            <ScrollTextIcon />
+            Stock ledger
+          </Link>
+          <Link
+            to="/inventory/suppliers"
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            <TruckIcon />
+            Suppliers
+          </Link>
+          <Link
+            to="/inventory/receive"
+            className={buttonVariants({ variant: "default", size: "sm" })}
+          >
+            <PackagePlusIcon />
+            Receive a delivery
+          </Link>
+        </div>
       </div>
 
       <Valuation valuation={valuation} />

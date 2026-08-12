@@ -40,6 +40,12 @@ export default [
     route("inventory/suppliers", "routes/inventory-suppliers.tsx"),
     route("inventory/movements", "routes/inventory-movements.tsx"),
     route("inventory/products/:productId", "routes/product-detail.tsx"),
+    // Analytics: the dashboard and the metric catalogue, then the assistant
+    // that runs one of those same metrics from a plain-English question. The
+    // assistant is a page rather than a widget because an answer is a document
+    // — headline, prose, the table it was written from — not a toast.
+    route("analytics", "routes/analytics.tsx"),
+    route("analytics/assistant", "routes/analytics-assistant.tsx"),
     // Queues: OPD is the `consulting` station's worklist; every other station
     // is the same screen under `/queues/:station`. `queues/actions` is the
     // write-only resource route the worklist posts to, and must outrank
@@ -57,6 +63,10 @@ export default [
     route("resources/note-search", "routes/resource-note-search.tsx"),
     route("resources/lab-tests", "routes/resource-lab-tests.tsx"),
     route("resources/products", "routes/resource-products.tsx"),
+    // The exception to the rule above: the socket connects browser-to-backend
+    // across origins, so this one hands the access token out rather than
+    // spending it server-side. See the route for what that costs.
+    route("resources/realtime-token", "routes/resource-realtime-token.tsx"),
     // Unbuilt sidebar modules land on a placeholder until their route exists.
     route("*", "routes/coming-soon.tsx"),
   ]),

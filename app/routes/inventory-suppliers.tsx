@@ -11,7 +11,7 @@
  * back through.
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Loader2Icon, PlusIcon, TruckIcon } from "lucide-react";
 import { data, Form, useNavigation } from "react-router";
 import { toast } from "sonner";
@@ -98,11 +98,15 @@ export default function SuppliersPage({ loaderData, actionData }: Route.Componen
   const { suppliers, canAdd } = loaderData;
   const navigation = useNavigation();
   const busy = navigation.formData != null;
+  // Counts successful adds so every one of them — not just the first —
+  // remounts the form and clears its inputs.
+  const [added, setAdded] = useState(0);
 
   useEffect(() => {
     if (!actionData) return;
     const notify = actionData.ok ? toast.success : toast.error;
     notify(actionData.message);
+    if (actionData.ok) setAdded((count) => count + 1);
   }, [actionData]);
 
   return (
@@ -115,7 +119,7 @@ export default function SuppliersPage({ loaderData, actionData }: Route.Componen
       />
 
       {canAdd && (
-        <Form method="post" key={actionData?.ok ? "added" : "fresh"}>
+        <Form method="post" key={added}>
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Add a supplier</CardTitle>

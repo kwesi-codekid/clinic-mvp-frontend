@@ -24,7 +24,7 @@ import { toast } from "sonner";
 import { PageHeader } from "~/components/page-header";
 import { ProductPicker } from "~/components/product-picker";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent } from "~/components/ui/card";
+import { Card } from "~/components/ui/card";
 import { Field, FieldDescription, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import {
@@ -38,7 +38,7 @@ import { ApiError, describeApiError } from "~/lib/api/client";
 import { getProduct, listSuppliers, receiveStock } from "~/lib/api/inventory";
 import { throwRouteError } from "~/lib/api/route-error";
 import { requireStaff, requireStaffAction } from "~/lib/auth.server";
-import { tryToPesewas } from "~/lib/money";
+import { formatPesewas, tryToPesewas } from "~/lib/money";
 import type { Role } from "~/models/enums";
 import type { Product } from "~/models/inventory";
 import { isObjectId, parseObjectId } from "~/models/primitives";
@@ -160,6 +160,13 @@ export default function InventoryReceivePage({
   const [searchParams] = useSearchParams();
 
   const [product, setProduct] = useState<Product | null>(preselected);
+  // Controlled so the value line beneath the form can count as the clerk
+  // types; the strings are what the action reads either way.
+  const [quantity, setQuantity] = useState("");
+  const [costPrice, setCostPrice] = useState("");
+  // Counts successful receipts so every one of them — not just the first —
+  // remounts the form and clears the uncontrolled inputs.
+  const [received, setReceived] = useState(0);
 
   // A received delivery clears the form for the next line on the invoice;
   // a failure keeps what was typed.
@@ -168,10 +175,23 @@ export default function InventoryReceivePage({
     if (actionData.ok) {
       toast.success(actionData.message);
       if (!searchParams.get("productId")) setProduct(null);
+      setQuantity("");
+      setCostPrice("");
+      setReceived((count) => count + 1);
     } else {
       toast.error(actionData.message);
     }
   }, [actionData, searchParams]);
+
+  // The counting line: what this delivery values at, at the typed cost.
+  // A display estimate only — the pesewas stay integers and the API's
+  // valuation is the authority.
+  const quantityNumber = Number(quantity);
+  const unitPesewas = tryToPesewas(costPrice);
+  const valuePesewas =
+    Number.isFinite(quantityNumber) && quantityNumber > 0 && unitPesewas !== null
+      ? Math.round(quantityNumber * unitPesewas)
+      : undefined;
 
   const supplierItems = [
     { value: "", label: "Not recorded" },
@@ -196,10 +216,20 @@ export default function InventoryReceivePage({
           method="post"
           // A cleared form needs its inputs cleared too, and React Router
           // reuses the DOM across submissions.
-          key={actionData?.ok ? "received" : "fresh"}
+          key={received}
         >
-          <Card>
-            <CardContent className="space-y-4">
+          <Card className="gap-0 overflow-hidden py-0">
+            {/* The document this form is: the paper GRN's header line. */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-6 py-3">
+              <span className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+                Goods received note
+              </span>
+              <span className="font-mono text-xs text-muted-foreground">
+                GRN № assigned on save
+              </span>
+            </div>
+
+            <div className="space-y-4 p-6">
               <Field>
                 <FieldLabel htmlFor="receive-product">What arrived</FieldLabel>
                 <ProductPicker
@@ -225,6 +255,7 @@ export default function InventoryReceivePage({
                     name="batchNumber"
                     placeholder="As printed on the box"
                     disabled={busy}
+                    className="font-mono"
                   />
                   <FieldDescription>A recall is traced through this.</FieldDescription>
                 </Field>
@@ -244,7 +275,10 @@ export default function InventoryReceivePage({
                     min="1"
                     step="any"
                     inputMode="decimal"
+                    value={quantity}
+                    onChange={(event) => setQuantity(event.target.value)}
                     disabled={busy}
+                    className="font-mono tabular-nums"
                   />
                   <FieldDescription>
                     In {product?.unitOfIssue ?? "units of issue"}, not in packs.
@@ -258,7 +292,10 @@ export default function InventoryReceivePage({
                     name="costPrice"
                     inputMode="decimal"
                     placeholder="0.25"
+                    value={costPrice}
+                    onChange={(event) => setCostPrice(event.target.value)}
                     disabled={busy}
+                    className="font-mono tabular-nums"
                   />
                   <FieldDescription>
                     In cedis, for one {product?.unitOfIssue ?? "unit"} — not for the whole
@@ -294,16 +331,37 @@ export default function InventoryReceivePage({
                 </FieldDescription>
               </Field>
 
+              {/* The counting line: what the delivery values at, live. */}
+              <div className="rounded-md bg-muted/50 px-3 py-2 text-xs">
+                {valuePesewas !== undefined ? (
+                  <span className="font-mono tabular-nums text-muted-foreground">
+                    {quantityNumber}
+                    {" × "}
+                    {formatPesewas(unitPesewas!)}
+                    {" = "}
+                    <span className="font-medium text-foreground">
+                      {formatPesewas(valuePesewas)}
+                    </span>
+                    <span className="font-sans"> onto the shelves at cost.</span>
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">
+                    Quantity and cost per unit are what the delivery will value at — the
+                    valuation and the write-off report both count at this price.
+                  </span>
+                )}
+              </div>
+
               <div className="flex items-center justify-end gap-3 border-t pt-4">
                 <span className="mr-auto text-xs text-muted-foreground">
-                  The API assigns the GRN number and writes the receipt to the stock ledger.
+                  The receipt is written to the stock ledger as it is saved.
                 </span>
                 <Button type="submit" disabled={busy || product === null}>
                   {busy ? <Loader2Icon className="animate-spin" /> : <PackagePlusIcon />}
                   Receive it
                 </Button>
               </div>
-            </CardContent>
+            </div>
           </Card>
         </Form>
       )}

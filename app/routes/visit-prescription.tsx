@@ -27,7 +27,13 @@ import { Loader2Icon, PillIcon, PlusIcon, SendIcon, XIcon } from "lucide-react";
 import { data, Form, Link, useNavigation } from "react-router";
 import { toast } from "sonner";
 
-import { AllergyPanel, Directions, ItemStatusPill, PrescriptionStatusPill } from "~/components/dispensing";
+import {
+  AllergyPanel,
+  Directions,
+  ItemCount,
+  ItemStatusPill,
+  PrescriptionStatusPill,
+} from "~/components/dispensing";
 import { PageHeader } from "~/components/page-header";
 import { ProductPicker } from "~/components/product-picker";
 import { VisitHeader } from "~/components/visit-header";
@@ -267,8 +273,9 @@ function LineRow({
 }) {
   const units = Number(line.doseUnits);
   const duration = Number(line.durationDays);
+  const effectiveUnits = Number.isFinite(units) && units > 0 ? units : 1;
   const quantity = estimateQuantity({
-    doseUnits: Number.isFinite(units) && units > 0 ? units : 1,
+    doseUnits: effectiveUnits,
     frequency: line.frequency,
     durationDays: Number.isFinite(duration) ? duration : 0,
   });
@@ -410,23 +417,41 @@ function LineRow({
         </Field>
       </div>
 
-      <p className="text-xs text-muted-foreground">
+      {/* The counting line: the same arithmetic the API runs on save, shown
+          as arithmetic so the prescriber sees what the instruction counts
+          out to before committing. */}
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-md bg-muted/50 px-3 py-2 text-xs">
         {quantity === undefined ? (
-          line.frequency === "prn" ? (
-            "As required has no schedule — the pharmacy will need a quantity from you or a rule of its own."
-          ) : (
-            "No quantity follows from this instruction yet."
-          )
+          <span className="text-muted-foreground">
+            {line.frequency === "prn"
+              ? "As required has no schedule — the pharmacy will need a quantity from you or a rule of its own."
+              : "No quantity follows from this instruction yet."}
+          </span>
         ) : (
           <>
-            About{" "}
-            <span className="font-medium text-foreground tabular-nums">
-              {quantity} {line.product?.unitOfIssue ?? "units"}
-            </span>{" "}
-            to dispense. The pharmacy counts what the API works out on save, not this preview.
+            <span className="font-mono text-muted-foreground tabular-nums">
+              {effectiveUnits}
+              {line.frequency === "stat" ? (
+                <> × stat</>
+              ) : (
+                <>
+                  {" × "}
+                  {line.frequency}
+                  {" × "}
+                  {duration} days
+                </>
+              )}
+              {" = "}
+              <span className="font-medium text-foreground">
+                {quantity} {line.product?.unitOfIssue ?? "units"}
+              </span>
+            </span>
+            <span className="text-muted-foreground">
+              The pharmacy counts what the API works out on save, not this preview.
+            </span>
           </>
         )}
-      </p>
+      </div>
     </li>
   );
 }
@@ -473,9 +498,7 @@ function PrescriptionCard({ prescription }: { prescription: Prescription }) {
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium">{item.drugName}</span>
               <ItemStatusPill status={item.status} />
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {item.quantityDispensed} of {item.quantityPrescribed} given
-              </span>
+              <ItemCount item={item} />
             </div>
             <Directions item={item} />
             {item.status === "substituted" && item.substitutedFor && (
@@ -510,6 +533,9 @@ export default function VisitPrescriptionPage({
 
   const [lines, setLines] = useState<LineDraft[]>(() => [emptyLine()]);
   const [acknowledged, setAcknowledged] = useState(false);
+  // Counts written scripts so each success remounts the form — the notes
+  // field is uncontrolled and would otherwise carry over to the next script.
+  const [written, setWritten] = useState(0);
 
   // A written script clears the form; a failure keeps it for another go.
   useEffect(() => {
@@ -518,6 +544,7 @@ export default function VisitPrescriptionPage({
       toast.success(actionData.message);
       setLines([emptyLine()]);
       setAcknowledged(false);
+      setWritten((count) => count + 1);
     } else {
       toast.error(actionData.message);
     }
@@ -564,7 +591,7 @@ export default function VisitPrescriptionPage({
       <AllergyPanel allergies={allergies} matches={matches} />
 
       {canPrescribe && open && (
-        <Form method="post">
+        <Form method="post" key={written}>
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Write a prescription</CardTitle>

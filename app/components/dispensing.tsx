@@ -2,6 +2,15 @@
  * How pharmacy work is shown, shared by the counter, the prescription page and
  * the visit's prescribing screen (T7.2).
  *
+ * The module's one typographic device is the **counting line**: record figures
+ * set in the mono face with muted words between them — `5 of 15 given · 10
+ * owed`. It is how this module renders every number a pharmacist would once
+ * have written on the paper record, and {@link ItemCount} and
+ * {@link DispenseTrail} are its two shapes here. Colour keeps one strict
+ * vocabulary throughout: emerald for stock arriving or an item fully given,
+ * amber for short or expiring, red only for cancelled, expired or an allergy
+ * hit, and grey for a closed outcome.
+ *
  * Two judgements this module makes on purpose:
  *
  * - **Out of stock is not a failure.** It reads as a closed outcome in muted
@@ -26,7 +35,7 @@ import {
   type PrescriptionItemStatus,
   type PrescriptionStatus,
 } from "~/models/enums";
-import type { DispenseRecord, PrescriptionItem } from "~/models/pharmacy";
+import { isActiveItem, type DispenseRecord, type PrescriptionItem } from "~/models/pharmacy";
 import { describeAllergy, type Allergy } from "~/models/patient";
 
 /* -------------------------------------------------------------------------
@@ -59,6 +68,72 @@ export function ItemStatusPill({ status }: { status: PrescriptionItemStatus }) {
           : "muted";
 
   return <StatusPill tone={tone}>{PrescriptionItemStatuses.label(status)}</StatusPill>;
+}
+
+/* -------------------------------------------------------------------------
+   The counting line
+   ------------------------------------------------------------------------- */
+
+/**
+ * One item's quantity account — `5 of 15 given · 10 owed`.
+ *
+ * The figures are the record: what was prescribed, what has gone out, what the
+ * patient is still owed. Set in the mono face so they read as ledger entries,
+ * with the words kept muted between them.
+ */
+export function ItemCount({ item }: { item: PrescriptionItem }) {
+  const owed = isActiveItem(item) && item.quantityDispensed > 0;
+
+  return (
+    <span className="font-mono text-xs tabular-nums text-muted-foreground">
+      <span className="font-medium text-foreground">{item.quantityDispensed}</span>
+      {" of "}
+      <span className="font-medium text-foreground">{item.quantityPrescribed}</span>
+      {" given"}
+      {owed && (
+        <>
+          {" · "}
+          <span className="font-medium text-amber-700 dark:text-amber-400">
+            {item.quantityOutstanding}
+          </span>
+          {" owed"}
+        </>
+      )}
+    </span>
+  );
+}
+
+/**
+ * A script's items as a strip of segments, one per item, readable at a
+ * corridor glance where pills need reading: emerald went out in full, amber is
+ * part-way or substituted, grey reached a closed end, red should not have
+ * existed, and a hollow segment is still waiting.
+ */
+export function FillMeter({ items }: { items: readonly PrescriptionItem[] }) {
+  if (items.length === 0) return null;
+
+  return (
+    <span
+      className="flex h-1.5 w-full max-w-32 items-stretch gap-px overflow-hidden rounded-full"
+      role="img"
+      aria-label={`${items.filter((item) => !isActiveItem(item)).length} of ${items.length} items settled`}
+    >
+      {items.map((item) => (
+        <span
+          key={item.id}
+          className={cn(
+            "min-w-1 flex-1",
+            item.status === "dispensed" && "bg-emerald-500 dark:bg-emerald-400",
+            (item.status === "partially_dispensed" || item.status === "substituted") &&
+              "bg-amber-500 dark:bg-amber-400",
+            item.status === "out_of_stock" && "bg-muted-foreground/40",
+            item.status === "cancelled" && "bg-destructive/70",
+            item.status === "pending" && "bg-border",
+          )}
+        />
+      ))}
+    </span>
+  );
 }
 
 /* -------------------------------------------------------------------------
@@ -108,9 +183,16 @@ export function StockLevel({
         </>
       ) : (
         <>
-          {stockOnHand}
+          <span className="font-mono">{stockOnHand}</span>
           {unit} in stock
-          {short ? ` — ${required} needed` : ""}
+          {short ? (
+            <>
+              {" — "}
+              <span className="font-mono">{required}</span> needed
+            </>
+          ) : (
+            ""
+          )}
         </>
       )}
     </span>
@@ -122,11 +204,12 @@ export function StockLevel({
    ------------------------------------------------------------------------- */
 
 /**
- * Every batch handed over for one item.
+ * Every batch handed over for one item, as ledger lines.
  *
  * This is the recall trail: a batch is withdrawn by number, and this is the
  * only record tying one to a patient. A part-dispensed item carries several
- * lines, one per trip to the counter.
+ * lines, one per trip to the counter, so it reads like the stock card it
+ * writes to — quantity, batch, expiry, when, who.
  */
 export function DispenseTrail({ dispenses }: { dispenses: readonly DispenseRecord[] }) {
   if (dispenses.length === 0) return null;
@@ -136,19 +219,15 @@ export function DispenseTrail({ dispenses }: { dispenses: readonly DispenseRecor
       {dispenses.map((record, index) => (
         <li
           key={`${record.batchNumber}-${record.at}-${index}`}
-          className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-muted-foreground"
+          className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 font-mono text-xs text-muted-foreground"
         >
-          <span className="font-medium text-foreground tabular-nums">{record.quantity}</span>
-          <span>
-            from batch <span className="font-mono">{record.batchNumber}</span>
-          </span>
+          <span className="font-medium text-foreground tabular-nums">−{record.quantity}</span>
+          <span className="font-medium text-foreground">{record.batchNumber}</span>
           <span suppressHydrationWarning>
-            (expires {format(new Date(record.expiryDate), "MMM yyyy")})
+            exp {format(new Date(record.expiryDate), "MMM yyyy")}
           </span>
-          <span suppressHydrationWarning>
-            · {format(new Date(record.at), "d MMM, HH:mm")}
-          </span>
-          {record.byName && <span>· {record.byName}</span>}
+          <span suppressHydrationWarning>· {format(new Date(record.at), "d MMM, HH:mm")}</span>
+          {record.byName && <span className="font-sans">· {record.byName}</span>}
         </li>
       ))}
     </ul>

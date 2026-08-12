@@ -18,15 +18,19 @@
  * in the corridor (they went to the till first, or the queue moved on) simply
  * shows without a name — an honest blank rather than a guess.
  *
- * Polling lives on this route — one revalidation refreshes both tabs — so the
- * worklist mounts with `pollMs={0}`.
+ * Staying current lives on this route — one revalidation refreshes both tabs —
+ * so the worklist mounts with `pollMs={0}`. The spec documents no socket event
+ * for dispensing itself, so the counter tab rides on the station's own
+ * `queue:updated` and on the poll behind it (see
+ * `~/hooks/use-live-revalidate`).
  */
 
 import { format } from "date-fns";
-import { Loader2Icon, PillIcon } from "lucide-react";
-import { Link, useRevalidator } from "react-router";
+import { PillIcon } from "lucide-react";
+import { Link } from "react-router";
 
-import { ItemStatusPill, PrescriptionStatusPill, StockLevel } from "~/components/dispensing";
+import { FillMeter, ItemStatusPill, StockLevel } from "~/components/dispensing";
+import { FreshnessNote } from "~/components/freshness-note";
 import { StationWorklist } from "~/components/station-worklist";
 import { Card } from "~/components/ui/card";
 import {
@@ -38,7 +42,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
-import { usePoll } from "~/hooks/use-poll";
+import { useLiveRevalidate } from "~/hooks/use-live-revalidate";
 import { getPharmacyQueue, listPrescriptions } from "~/lib/api/pharmacy";
 import { getStationCounts, getStationQueue } from "~/lib/api/queues";
 import { throwRouteError } from "~/lib/api/route-error";
@@ -60,8 +64,14 @@ export function meta() {
 /** Who `GET /pharmacy/queue` answers. Everyone else reads plain prescriptions. */
 const COUNTER_ROLES: readonly Role[] = ["pharmacy", "admin"];
 
-/** Same cadence as the station worklists — see `station-worklist.tsx`. */
-const POLL_MS = 20_000;
+/**
+ * Events that mean this screen changed.
+ *
+ * There is no `pharmacy:*` event in the spec — dispensing is not broadcast —
+ * so the counter tab is refreshed by the station's own queue traffic and, at
+ * worst, by the poll underneath it.
+ */
+const PHARMACY_EVENTS = ["queue:updated"] as const;
 
 /* -------------------------------------------------------------------------
    Loader
@@ -183,11 +193,14 @@ function CounterTable({
                   )}
                 </TableCell>
                 <TableCell className="px-4 py-2.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <PrescriptionStatusPill status={prescription.status} />
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {progress.outstanding} of {progress.total} left
-                    </span>
+                  <div className="space-y-1.5">
+                    <FillMeter items={prescription.items} />
+                    <div className="font-mono text-xs text-muted-foreground tabular-nums">
+                      <span className="font-medium text-foreground">
+                        {progress.outstanding}
+                      </span>{" "}
+                      of {progress.total} left
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell className="px-4 py-2.5 text-sm" suppressHydrationWarning>
@@ -253,10 +266,13 @@ function ScriptsList({ prescriptions }: { prescriptions: readonly Prescription[]
 
 export default function PharmacyPage({ loaderData }: Route.ComponentProps) {
   const { queue, counts, prescriptions, namesByVisit, canCounter } = loaderData;
-  const revalidator = useRevalidator();
-
-  // One poll for both tabs. Never on top of an in-flight revalidation.
-  usePoll(() => revalidator.revalidate(), POLL_MS, revalidator.state === "idle");
+  // One subscription and one poll for both tabs, which is why the worklist
+  // below mounts with `pollMs={0}` — two of these would stack requests.
+  const freshness = useLiveRevalidate({
+    events: PHARMACY_EVENTS,
+    room: "queue:subscribe",
+    roomPayload: { station: "pharmacy" },
+  });
 
   return (
     <div className="space-y-6">
@@ -272,18 +288,25 @@ export default function PharmacyPage({ loaderData }: Route.ComponentProps) {
       <Tabs defaultValue="counter">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <TabsList>
-            <TabsTrigger value="counter">{canCounter ? "Counter" : "Prescriptions"}</TabsTrigger>
-            <TabsTrigger value="queue">Patient queue</TabsTrigger>
+            <TabsTrigger value="counter">
+              {canCounter ? "Counter" : "Prescriptions"}
+              {prescriptions.length > 0 && (
+                <span className="ml-1.5 text-muted-foreground tabular-nums">
+                  {prescriptions.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="queue">
+              Patient queue
+              {queue.waiting > 0 && (
+                <span className="ml-1.5 text-muted-foreground tabular-nums">
+                  {queue.waiting}
+                </span>
+              )}
+            </TabsTrigger>
           </TabsList>
-          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            {revalidator.state === "idle" ? (
-              <>Updates every {Math.round(POLL_MS / 1000)}s</>
-            ) : (
-              <>
-                <Loader2Icon className="size-3.5 animate-spin" />
-                Refreshing…
-              </>
-            )}
+          <span className="text-sm text-muted-foreground">
+            <FreshnessNote {...freshness} />
           </span>
         </div>
 

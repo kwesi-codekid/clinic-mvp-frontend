@@ -17,7 +17,13 @@
 
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { Loader2Icon, PackagePlusIcon, ScrollTextIcon, ShieldAlertIcon } from "lucide-react";
+import {
+  ArrowRightIcon,
+  Loader2Icon,
+  PackagePlusIcon,
+  ScrollTextIcon,
+  ShieldAlertIcon,
+} from "lucide-react";
 import { data, Link, useFetcher } from "react-router";
 import { toast } from "sonner";
 
@@ -25,7 +31,7 @@ import { StatusPill } from "~/components/directory";
 import { PageHeader } from "~/components/page-header";
 import { StockLedger } from "~/components/stock-ledger";
 import { Button, buttonVariants } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Card } from "~/components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -58,6 +64,7 @@ import { adjustBatch, getProduct, listMovements, listProductBatches } from "~/li
 import { throwRouteError } from "~/lib/api/route-error";
 import { requireStaff, requireStaffAction } from "~/lib/auth.server";
 import { formatPesewas } from "~/lib/money";
+import { cn } from "~/lib/utils";
 import { DosageForms, ProductCategories, StockMovementTypes, type Role } from "~/models/enums";
 import {
   ADJUSTABLE_MOVEMENT_TYPES,
@@ -201,10 +208,13 @@ function AdjustDialog({ batch, unitOfIssue }: { batch: StockBatch; unitOfIssue: 
       />
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Adjust batch {batch.batchNumber}</DialogTitle>
+          <DialogTitle>
+            Adjust batch <span className="font-mono">{batch.batchNumber}</span>
+          </DialogTitle>
           <DialogDescription>
-            {batch.quantityRemaining} {unitOfIssue} on hand. This appends a line to the stock
-            ledger — nothing is rewritten, and the reason stays with it.
+            <span className="font-mono tabular-nums">{batch.quantityRemaining}</span>{" "}
+            {unitOfIssue} on hand. This appends a line to the stock ledger — nothing is
+            rewritten, and the reason stays with it.
           </DialogDescription>
         </DialogHeader>
 
@@ -244,6 +254,7 @@ function AdjustDialog({ batch, unitOfIssue }: { batch: StockBatch; unitOfIssue: 
                 step="any"
                 inputMode="decimal"
                 disabled={busy}
+                className="font-mono tabular-nums"
               />
               <FieldDescription>Counted in {unitOfIssue}.</FieldDescription>
             </Field>
@@ -339,62 +350,72 @@ export default function ProductDetailPage({ loaderData }: Route.ComponentProps) 
         </Link>
       </PageHeader>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card size="sm" className="gap-2">
-          <CardHeader>
-            <CardDescription>On hand</CardDescription>
-            <CardTitle className="font-heading text-3xl font-semibold tracking-tight tabular-nums">
-              {product.stockOnHand ?? "—"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
+      {/* The product's stock card, top line: what is on the shelf, which box
+          opens next, and what the record calls it. */}
+      <Card className="grid gap-0 divide-y overflow-hidden py-0 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+        <div className="space-y-1 px-5 py-4">
+          <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+            On hand
+          </p>
+          <p className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
+            {product.stockOnHand ?? "—"}
+            {product.stockOnHand !== undefined && (
+              <span className="font-sans text-sm font-normal text-muted-foreground">
+                {" "}
+                {product.unitOfIssue}
+              </span>
+            )}
+          </p>
+          <p className="text-xs text-muted-foreground">
             {product.stockOnHand === undefined
               ? "Stock was not returned with this product."
-              : `${product.unitOfIssue}. Reorder at ${product.reorderLevel}.`}
-          </CardContent>
-        </Card>
+              : `Reorder at ${product.reorderLevel}.`}
+          </p>
+        </div>
 
-        <Card size="sm" className="gap-2">
-          <CardHeader>
-            <CardDescription>Next batch out</CardDescription>
-            <CardTitle className="font-heading text-xl font-semibold tracking-tight">
-              {next ? next.batchNumber : "None usable"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
+        <div className="space-y-1 px-5 py-4">
+          <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+            Next batch out
+          </p>
+          <p className="font-mono text-2xl font-semibold tracking-tight">
+            {next ? next.batchNumber : "—"}
+          </p>
+          <p className="text-xs text-muted-foreground">
             {next
               ? `${next.quantityRemaining} left, ${formatExpiry(next.daysToExpiry, next.expired).toLowerCase()}. Dispensing takes the earliest expiry first.`
               : "Every batch is empty or expired."}
-          </CardContent>
-        </Card>
+          </p>
+        </div>
 
-        <Card size="sm" className="gap-2">
-          <CardHeader>
-            <CardDescription>Flags</CardDescription>
-            <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-medium">
-              {product.belowReorderLevel && <StatusPill tone="warning">Below reorder</StatusPill>}
-              {!product.active && <StatusPill tone="muted">Inactive</StatusPill>}
-              {product.isControlled && (
-                <span className="inline-flex items-center gap-1 text-xs font-semibold">
-                  <ShieldAlertIcon className="size-3.5" aria-hidden />
-                  Controlled
-                </span>
+        <div className="space-y-1.5 px-5 py-4">
+          <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+            On the record
+          </p>
+          <p className="font-mono text-sm font-medium">
+            {product.code}
+            {product.nhisMedicineCode && (
+              <span className="text-muted-foreground"> · NHIS {product.nhisMedicineCode}</span>
+            )}
+          </p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {product.belowReorderLevel && <StatusPill tone="warning">Below reorder</StatusPill>}
+            {!product.active && <StatusPill tone="muted">Inactive</StatusPill>}
+            {product.isControlled && (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold">
+                <ShieldAlertIcon className="size-3.5" aria-hidden />
+                Controlled
+              </span>
+            )}
+            {product.isOnNhisList && <StatusPill tone="positive">On the NHIS list</StatusPill>}
+            {!product.belowReorderLevel &&
+              product.active &&
+              !product.isControlled &&
+              !product.isOnNhisList && (
+                <span className="text-xs text-muted-foreground">Nothing to flag.</span>
               )}
-              {product.isOnNhisList && <StatusPill tone="positive">On the NHIS list</StatusPill>}
-              {!product.belowReorderLevel &&
-                product.active &&
-                !product.isControlled &&
-                !product.isOnNhisList && (
-                  <span className="text-xs text-muted-foreground">Nothing to flag.</span>
-                )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            <span className="font-mono">{product.code}</span>
-            {product.nhisMedicineCode ? ` · NHIS ${product.nhisMedicineCode}` : ""}
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </div>
+      </Card>
 
       <section className="space-y-2">
         <h2 className="font-heading text-base font-semibold tracking-tight">
@@ -422,48 +443,70 @@ export default function ProductDetailPage({ loaderData }: Route.ComponentProps) 
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {batches.map((batch) => (
-                  <TableRow key={batch.id}>
-                    <TableCell className="px-4 py-2.5">
-                      <span className="font-mono text-sm">{batch.batchNumber}</span>
-                      {batch.id === next?.id && (
-                        <div className="text-xs font-medium text-primary">Next out</div>
+                {batches.map((batch) => {
+                  const isNext = batch.id === next?.id;
+
+                  return (
+                    <TableRow
+                      key={batch.id}
+                      className={cn(
+                        // The FEFO moment: the shelf and the system open the
+                        // same box, so the box to open next is the one row
+                        // that stands out.
+                        isNext && "bg-primary/5 hover:bg-primary/10",
+                        batch.expired && "opacity-60",
                       )}
-                    </TableCell>
-                    <TableCell className="px-4 py-2.5 text-sm" suppressHydrationWarning>
-                      {format(new Date(batch.expiryDate), "d MMM yyyy")}
-                      <div>
-                        <StatusPill tone={expiryTone(batch.daysToExpiry, batch.expired)}>
-                          {formatExpiry(batch.daysToExpiry, batch.expired)}
-                        </StatusPill>
-                      </div>
-                    </TableCell>
-                    <TableCell className="px-4 py-2.5 text-sm tabular-nums">
-                      {batch.quantityRemaining}
-                      <div className="text-xs text-muted-foreground">
-                        of {batch.quantityReceived} received
-                      </div>
-                    </TableCell>
-                    <TableCell className="px-4 py-2.5 text-sm tabular-nums">
-                      {formatPesewas(batchValuePesewas(batch))}
-                      <div className="text-xs text-muted-foreground">
-                        {formatPesewas(batch.costPricePesewas)} per {product.unitOfIssue}
-                      </div>
-                    </TableCell>
-                    <TableCell className="px-4 py-2.5 text-sm" suppressHydrationWarning>
-                      {format(new Date(batch.receivedAt), "d MMM yyyy")}
-                      <div className="text-xs text-muted-foreground">
-                        {batch.supplierName ?? "Supplier not recorded"}
-                        {batch.grnNumber ? ` · GRN ${batch.grnNumber}` : ""}
-                      </div>
-                    </TableCell>
-                    {canAdjust && (
-                      <TableCell className="px-4 py-2.5 text-right">
-                        <AdjustDialog batch={batch} unitOfIssue={product.unitOfIssue} />
+                    >
+                      <TableCell className="px-4 py-2.5">
+                        <span className="font-mono text-sm font-medium">{batch.batchNumber}</span>
+                        {isNext && (
+                          <div className="flex items-center gap-1 text-xs font-medium text-primary">
+                            <ArrowRightIcon className="size-3" aria-hidden />
+                            Next out — open this box
+                          </div>
+                        )}
                       </TableCell>
-                    )}
-                  </TableRow>
-                ))}
+                      <TableCell className="px-4 py-2.5 text-sm" suppressHydrationWarning>
+                        {format(new Date(batch.expiryDate), "d MMM yyyy")}
+                        <div>
+                          <StatusPill tone={expiryTone(batch.daysToExpiry, batch.expired)}>
+                            {formatExpiry(batch.daysToExpiry, batch.expired)}
+                          </StatusPill>
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-4 py-2.5 font-mono text-sm font-medium tabular-nums">
+                        {batch.quantityRemaining}
+                        <div className="text-xs font-normal text-muted-foreground">
+                          of {batch.quantityReceived} received
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-4 py-2.5 font-mono text-sm tabular-nums">
+                        {formatPesewas(batchValuePesewas(batch))}
+                        <div className="text-xs text-muted-foreground">
+                          {formatPesewas(batch.costPricePesewas)}
+                          <span className="font-sans"> per {product.unitOfIssue}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-4 py-2.5 text-sm" suppressHydrationWarning>
+                        {format(new Date(batch.receivedAt), "d MMM yyyy")}
+                        <div className="text-xs text-muted-foreground">
+                          {batch.supplierName ?? "Supplier not recorded"}
+                          {batch.grnNumber && (
+                            <>
+                              {" · "}
+                              <span className="font-mono">GRN {batch.grnNumber}</span>
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
+                      {canAdjust && (
+                        <TableCell className="px-4 py-2.5 text-right">
+                          <AdjustDialog batch={batch} unitOfIssue={product.unitOfIssue} />
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

@@ -42,6 +42,7 @@ import {
   ScanIcon,
   ScissorsIcon,
   SettingsIcon,
+  SparklesIcon,
   StethoscopeIcon,
   UsersRoundIcon,
 } from "lucide-react";
@@ -174,7 +175,23 @@ export const NAV_CATALOGUE: NavGroup[] = [
         icon: ReceiptTextIcon,
         roles: ["cashier", "claims", "records"],
       },
-      { label: "Analytics", to: "/analytics", icon: ChartColumnIcon, roles: ["claims"] },
+      /*
+       * Offered to everyone, deliberately. `/analytics/*` is the one part of
+       * this group the spec puts **no role gate** on — the dashboard, the
+       * metric catalogue and the assistant are all "any signed-in staff
+       * member", unlike `/reports/*` next door (admin, cashier, claims). A
+       * clinician who wants to know how many patients came through today
+       * should not be told to ask the claims officer.
+       */
+      { label: "Analytics", to: "/analytics", icon: ChartColumnIcon },
+      /*
+       * The assistant earns its own entry rather than living only behind the
+       * button on the dashboard: it is the one screen someone arrives at with a
+       * question already in mind, and making them route through Analytics to
+       * find it hides the fastest way to an answer. Ungated for the same reason
+       * as Analytics itself — it can only run the metrics above.
+       */
+      { label: "Ask AI", to: "/analytics/assistant", icon: SparklesIcon },
       { label: "Settings", to: "/settings", icon: SettingsIcon, roles: [] },
     ],
   },
@@ -219,9 +236,19 @@ export function buildNav(staff: Staff, facility: Facility | null): NavGroup[] {
  * The module that owns `pathname`, searched over the whole catalogue rather
  * than one person's menu — the "coming soon" placeholder has to be able to
  * name a module whether or not the reader is offered it.
+ *
+ * **Longest match wins**, not first: `/analytics` and `/analytics/assistant`
+ * are both modules, and on the assistant's own page the more specific of the
+ * two is the one standing under the reader's feet. Declaration order in the
+ * catalogue is about how the sidebar reads, and must not decide this.
  */
 export function findNavItem(pathname: string): NavItem | undefined {
-  return NAV_CATALOGUE.flatMap((group) => group.items).find((item) =>
-    item.to === "/" ? pathname === "/" : pathname.startsWith(item.to),
-  );
+  let owner: NavItem | undefined;
+
+  for (const item of NAV_CATALOGUE.flatMap((group) => group.items)) {
+    const matches = item.to === "/" ? pathname === "/" : pathname.startsWith(item.to);
+    if (matches && (!owner || item.to.length > owner.to.length)) owner = item;
+  }
+
+  return owner;
 }

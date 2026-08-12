@@ -13,12 +13,12 @@
  * loaders — so mounting it costs a host route one `getStationQueue` call in
  * its loader and nothing else.
  *
- * **Staying current.** The spec broadcasts `queue:updated` over Socket.io but
- * documents no socket URL, namespace or handshake, so this polls the loader on
- * an interval instead (see `~/hooks/use-poll`, and the note in
- * `~/lib/api/queues`). Polling pauses while the tab is hidden and resumes on
- * return. When the socket is documented, it replaces {@link usePoll} here and
- * nothing else changes.
+ * **Staying current.** The spec broadcasts `queue:updated` and
+ * `queue:counters` over Socket.io, and T0.5 wired the client up, so this
+ * subscribes to both and revalidates on either. Polling has not gone away: it
+ * carries the screen whenever the socket is down and stays on as a slow
+ * backstop when it is up. See `~/hooks/use-live-revalidate` for why that
+ * backstop is not belt-and-braces.
  */
 
 import { useEffect } from "react";
@@ -35,10 +35,11 @@ import {
   TriangleAlertIcon,
   UsersRoundIcon,
 } from "lucide-react";
-import { Link, useFetcher, useRevalidator } from "react-router";
+import { Link, useFetcher } from "react-router";
 import { toast } from "sonner";
 
 import { avatarTint, initialsOf, StatusPill } from "~/components/directory";
+import { FreshnessNote } from "~/components/freshness-note";
 import { PriorityPill } from "~/components/visit-header";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Button, buttonVariants } from "~/components/ui/button";
@@ -51,7 +52,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { usePoll } from "~/hooks/use-poll";
+import { POLL_MS, useLiveRevalidate } from "~/hooks/use-live-revalidate";
 import { cn } from "~/lib/utils";
 import { QueueStatuses, Sexes, Stations, type Station } from "~/models/enums";
 import { formatMinutes } from "~/models/visit";
@@ -61,13 +62,14 @@ import { isLongWait, type QueueEntry, type StationCount, type StationQueue } fro
 const ACTIONS = "/queues/actions";
 
 /**
- * How often the worklist re-reads its station.
+ * Events that mean this worklist changed.
  *
- * TASK.md suggests 15–30s; 20s is the middle of that. Fast enough that a
- * patient called at the next desk disappears from this one before anyone acts
- * on stale information, slow enough not to punish a clinic's network.
+ * `queue:updated` carries the station's own `StationQueue`; `queue:counters`
+ * is the all-stations strip in the switcher above it. Both are answered the
+ * same way — revalidate and let the loader be the authority — so the payloads
+ * are deliberately ignored.
  */
-const POLL_MS = 20_000;
+const QUEUE_EVENTS = ["queue:updated", "queue:counters"] as const;
 
 /* -------------------------------------------------------------------------
    Counters
@@ -310,15 +312,19 @@ export function StationWorklist({
   queue: StationQueue;
   /** Waiting counts for the switcher. Omit to hide it. */
   counts?: StationCount[];
-  /** Override the polling interval; `0` disables it. */
+  /** Override the no-socket polling interval; `0` disables it. */
   pollMs?: number;
 }) {
-  const revalidator = useRevalidator();
   const callNext = useQueueFetcher();
 
-  // Never poll on top of an in-flight revalidation — the requests would stack
-  // up on exactly the slow network that made one slow in the first place.
-  usePoll(() => revalidator.revalidate(), pollMs, revalidator.state === "idle");
+  // Pushed when the socket is up, polled when it is not. `queue:subscribe` is
+  // the room this station's events are sent to; it is re-joined on reconnect.
+  const { live, refreshing, intervalMs } = useLiveRevalidate({
+    events: QUEUE_EVENTS,
+    room: "queue:subscribe",
+    roomPayload: { station: queue.station },
+    pollMs,
+  });
 
   const calling = callNext.state !== "idle";
   const nothingWaiting = queue.waiting === 0;
@@ -489,16 +495,7 @@ export function StationWorklist({
               ? "Nobody on this list"
               : `${queue.entries.length} on this list · ordered by priority, then arrival`}
           </span>
-          <span className="flex items-center gap-1.5">
-            {revalidator.state === "idle" ? (
-              <>Updates every {Math.round(pollMs / 1000)}s</>
-            ) : (
-              <>
-                <Loader2Icon className="size-3.5 animate-spin" />
-                Refreshing…
-              </>
-            )}
-          </span>
+          <FreshnessNote live={live} refreshing={refreshing} intervalMs={intervalMs} />
         </div>
       </Card>
     </div>

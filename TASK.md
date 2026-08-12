@@ -101,7 +101,7 @@ app/
 
 | Phase | State |
 |---|---|
-| Phase 0 — Foundations | **Done** — `primitives.ts`, `enums.ts`, `money.ts` (+tests), `lib/api/client.ts` (+integration test), root layout, ~35 shadcn primitives, `route-error.tsx` |
+| Phase 0 — Foundations | **Done** — `primitives.ts`, `enums.ts`, `money.ts` (+tests), `lib/api/client.ts` (+integration test), root layout, ~35 shadcn primitives, `route-error.tsx`, and **T0.5's `lib/realtime.ts`** + `hooks/use-live-revalidate.ts` |
 | Phase 1 — Identity | **T1.1/T1.2 done** (`models/staff.ts`, `models/auth.ts`, `lib/auth.server.ts`, login/logout routes). **T1.3 pending** — `NAV_GROUPS` in `app-shell.tsx` is unfiltered. **T1.4 (search) not started** — the topbar search box is a dumb `Input` |
 | Phase 2 — Patient | **Done** — `models/patient.ts`, registration/folder/edit/merge routes, `patient-form.tsx`, `duplicate-candidates.tsx` |
 | Phase 3 — Visit | **Done** — `models/visit.ts`, `lib/api/visits.ts`, `visit-header.tsx`, `station-timeline.tsx`, `visits.tsx`, `visit-new.tsx`, `visit-detail.tsx` with move/close/cancel |
@@ -110,11 +110,14 @@ app/
 | Phase 6 — Lab | **Done** — `models/lab.ts` (+tests), `lib/api/lab.ts`, `lab-results.tsx`, `lab-test-picker.tsx`, `laboratory.tsx` (bench + station queue tabs), `lab-order.tsx` (collect, per-item results/verify/reject), `visit-lab.tsx` (order-from-consultation, verified-results readback), `resources/lab-tests` |
 | Phase 7 — Pharmacy & inventory | **Done** — `models/inventory.ts` + `models/pharmacy.ts` (both +tests), `lib/api/{inventory,pharmacy}.ts`, `dispensing.tsx`, `product-picker.tsx`, `stock-ledger.tsx`, `visit-prescription.tsx` (prescribing with allergy gate), `pharmacy.tsx` (counter + station queue tabs), `prescription.tsx` (per-item dispense/substitute/out-of-stock), `inventory.tsx` (stock, low-stock, expiring + valuation), `product-detail.tsx` (batches + adjust), `inventory-receive.tsx`, `inventory-suppliers.tsx`, `inventory-movements.tsx`, `resources/products` |
 | Phase 14 — Admin | **T14.1 done out of order** (`staff.tsx`, `staff-drawer.tsx`, `lib/api/staff.ts`). **T14.2 partly** — `models/facility.ts` and `lib/api/facility.ts` exist; the root loader still does not fetch `GET /facility`, which Phases 6/7/11/15 need for feature gating. `lib/api/platform.ts` covers T14.3's health call |
-| Phases 8–13, 15 | Not started |
+| Phase 13 — Reports & analytics | **T13.3/T13.4 done, out of order** — `models/analytics.ts` (+tests), `lib/api/analytics.ts`, `metric-result.tsx`, `analytics.tsx` (dashboard + catalogue), `analytics-assistant.tsx` (ask box, streaming with a complete-response fallback). Built ahead of Phases 8–12 because the backend composes both the dashboard and every metric itself — the frontend consumes finished aggregations, so nothing here waits on the billing or claims *screens*. **T13.1/T13.2 not started** |
+| Phases 8–12, 15 | Not started |
 
 `app/lib/api/*` already targets the current paths (`/patients/check-duplicates`, `/visits/open`, `/auth/logout`) — the code kept pace with the API; this plan is what had drifted.
 
 **Pattern established in Phase 5, reusable from here on**: live lookups go through read-only `resources/*` routes rather than actions on the screen that needs them. The access token lives in an httpOnly cookie so the browser cannot call the API directly, and a `GET` `fetcher.load()` answers a keystroke *without* revalidating the calling route. Two of the five wrap an API `POST` that writes nothing (`/vitals/preview`, `/analytics/notes/search`) — exposing them as `GET` is what keeps them off the revalidation path. `resources/lab-tests` (T6.2) and `resources/products` (T7.1) followed; Phase 8's price quote is the next one.
+
+T0.5 added the one deliberate **exception**: `resources/realtime-token` hands the access token *to* the browser, because the socket is a cross-origin connection that the httpOnly cookie cannot authenticate. It is the short-lived access token only, `no-store`, and never persisted client-side — the refresh token stays in the cookie.
 
 ---
 
@@ -172,11 +175,17 @@ app/
 ### T0.4 — App shell, theming, error boundary ✅
 - **Deliverable**: root layout, Tailwind theme, shadcn primitives, route `ErrorBoundary` rendering `ApiError` shape.
 
-### T0.5 — Socket.io client (new)
+### T0.5 — Socket.io client (new) ✅
 - **Blocked by**: T0.3, T1.2
 - **Deliverable**: `app/lib/realtime.ts` — a browser-only Socket.io client authenticated with the access token, with a `useRealtime(event, handler)` hook and automatic reconnect. SSR-safe: connect in an effect, never during a loader.
 - **Note**: `GET /health` reports `checks.realtime: up|down` and `checks.ai: enabled|disabled`. Treat the socket as an **accelerator, not a source of truth** — every screen must still work on loader data alone when `realtime` is down, degrading to `revalidate` on an interval.
 - **Done when**: a second browser tab sees a queue change without a manual refresh, and killing the socket does not break the screen.
+- **Handshake (established against the deployed backend, not the spec)**: the default namespace at the API's **origin** — `https://…auxiliarynetwork.com`, *not* under `/api/v1` — default `/socket.io` path, bearer token as `auth: { token }`. Probing it unauthenticated returns `connect_error: "Authentication required"`; with a bad token, `"Invalid token"`.
+- **Shipped**: `app/lib/realtime.ts` (shared connection, `useRealtime` / `useRealtimeRoom` / `useRealtimeAny` / `useRealtimeStatus` / `emitRealtime`), `routes/resource-realtime-token.tsx`, `hooks/use-live-revalidate.ts`, `components/freshness-note.tsx`. `station-worklist.tsx`, `laboratory.tsx` and `pharmacy.tsx` now subscribe instead of polling flat out.
+- **Two things worth knowing**:
+  1. The access token is handed to the browser by `resources/realtime-token` — the socket is a cross-origin connection, so the httpOnly cookie cannot authenticate it. It is the short-lived *access* token only, `no-store`, never persisted client-side; the refresh token stays in the cookie.
+  2. **Polling did not go away.** The room-join *payload* (`queue:subscribe` with what?) is still undocumented, so a join could silently not take — which would leave a screen that looks live and is frozen. Screens therefore keep a slow backstop poll (60s) while the socket is up, and the full 20s poll when it is down. See `hooks/use-live-revalidate`.
+- **Open question for the backend**: the exact payload for `queue:subscribe`, and the event name that joins an `ai:<streamId>` room (T13.4 guesses `ai:subscribe`).
 
 ---
 
@@ -492,20 +501,30 @@ Reports and analytics are now **separate tags** — the takings and revenue repo
 - **Endpoints**: **`GET /reports/daily-takings`**, **`GET /reports/revenue-by-service`**.
 - **Deliverable**: takings by payment method (reconciles against the Z-report) and revenue by service line. Both are cashier/admin-gated.
 
-### T13.3 — Metrics & dashboard
+### T13.3 — Metrics & dashboard ✅
 - **Defines**: `MetricSummary`, `MetricResult`, `Dashboard`, `StationCount`.
 - **Blocked by**: T9.1, T8.1
 - **Endpoints**: `GET /analytics/metrics`, **`POST /analytics/metrics/{name}/run`** (body is the metric's free-form params), `GET /analytics/dashboard`.
 - **Deliverable**: executive dashboard (today/month, topDiagnosis, bedOccupancyPercent, lowStockCount, outstanding, nhisShortfall) + a generic metric renderer driven by `MetricResult.columns[].type` (string, number, money, date, percent) — one cell renderer per column type, not one component per metric. `MetricResult.headline` is a computed one-line answer; render it above the table.
 - **Note**: there is no `POST /analytics/query`. Metrics are **named and enumerated** by `GET /analytics/metrics` and run by name — build the picker from the catalogue rather than composing queries client-side.
+- **Shipped**: `models/analytics.ts` (+tests), `lib/api/analytics.ts`, `components/metric-result.tsx` (five cell renderers, no metric-specific code), `routes/analytics.tsx`, `MetricColumnTypes` in `enums.ts`.
+- **Two decisions**: metrics run on their **default params** — the catalogue publishes no schema for a metric's params, so there is nothing to build a form from, and varying the period is what T13.4 is for. And the selected metric is a URL search param, so a result is shareable and SSR-rendered; a metric that 400s reports in place rather than taking the dashboard down with it.
+- **Nav**: the `Analytics` entry was gated to `claims` and is now offered to everyone — `/analytics/*` is the one part of that group the spec puts **no role gate** on, unlike `/reports/*` (admin, cashier, claims).
 
-### T13.4 — Natural-language assistant
+### T13.4 — Natural-language assistant ✅
 - **Defines**: `AskResult` → `MetricResult`; `AssistantStatus`.
 - **Blocked by**: T13.3, T0.5
 - **Endpoints**: **`POST /analytics/ask`** (body `{question, stream, streamId}`), **`GET /analytics/assistant/status`**.
 - **Realtime**: with `stream: true`, join the **`ai:<streamId>`** socket room to receive the answer token by token.
 - **Deliverable**: ask box rendering narrative + resulting chart + suggested follow-ups, streaming when the socket is up and falling back to a single response when it is not. Gate on `AssistantStatus` and on `GET /health`'s `checks.ai`.
 - **Note**: the assistant **only ever runs one of the catalogued metrics** and writes prose around the real result — it never produces a figure of its own, and says so when no metric fits. The UI should make that guarantee visible (show which metric ran), because it is the reason the answer can be trusted.
+- **Shipped**: `routes/analytics-assistant.tsx` at `/analytics/assistant`, plus `ask` / `getAssistantStatus` in `lib/api/analytics.ts` and `AskResult` / `AskQuestion` / `AssistantStatus` in `models/analytics.ts`.
+- **Three things the implementation turns on**:
+  1. **Attribution is the feature.** Every answer names the metric that ran, and the figures are rendered from `result` by T13.3's renderer — never parsed back out of the prose. `result.headline` (computed by the API) sits above the narrative, because unlike the prose it cannot disagree with the table.
+  2. **`answered: false` is a correct outcome**, not an error: no catalogued metric fits, so the screen says so and offers the suggestions instead of a table.
+  3. **Streaming is presentation only.** The POST returns the complete `AskResult` regardless; the socket stream is replaced by it, never merged. `ask()` overrides the client's 20s default with a 90s timeout — a language model choosing a metric, running it and writing around it is not a sick request.
+- **Open question for the backend**: the event that joins an `ai:<streamId>` room, and the event/shape the tokens arrive in. The client emits `ai:subscribe` (mirroring the documented `queue:subscribe`) and accepts token payloads shaped `string | {token|delta|text|chunk|content}`. If either guess is wrong the answer still arrives complete when the POST resolves — the documented fallback — so this is worth confirming, not worth blocking on.
+- **Not verified against live data**: every authenticated call is written from the spec and typechecks, but no test credentials exist in the repo, so `/analytics/{dashboard,metrics,ask}` have not been exercised against the deployed backend. `GET /analytics/assistant/status` (unauthenticated) was: `enabled, reachable, authenticated, chatModel gpt-oss:120b present`.
 
 ---
 

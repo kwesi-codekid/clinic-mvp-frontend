@@ -342,6 +342,70 @@ export const NoteSearchModes = defineEnum({
 export type NoteSearchMode = (typeof NoteSearchModes.values)[number];
 
 /* -------------------------------------------------------------------------
+   Billing
+   ------------------------------------------------------------------------- */
+
+/** What kind of thing a charge line bills for. */
+export const ChargeCategories = defineEnum({
+  consultation: "Consultation",
+  lab: "Laboratory",
+  imaging: "Imaging",
+  medication: "Medication",
+  procedure: "Procedure",
+  bed: "Bed",
+  consumable: "Consumable",
+  registration: "Registration",
+  other: "Other",
+});
+export type ChargeCategory = (typeof ChargeCategories.values)[number];
+
+/**
+ * Where one charge line stands.
+ *
+ * `waived` and `cancelled` are different endings on purpose: a waiver forgives
+ * a **legitimate** charge (and is reported on — it needs a reason), while a
+ * cancellation removes a line that should never have been raised. The two are
+ * different roles, different copy and different reports, and neither is a
+ * failed `paid`.
+ */
+export const ChargeStatuses = defineEnum({
+  pending: "Pending",
+  billed: "Billed",
+  paid: "Paid",
+  waived: "Waived",
+  cancelled: "Cancelled",
+});
+export type ChargeStatus = (typeof ChargeStatuses.values)[number];
+
+/**
+ * What raised a charge. Everything except `manual` was written by another
+ * module doing its job — a lab order, a dispense, a bed-day accrual — so
+ * `manual` lines are the only ones that should ever look editable.
+ */
+export const ChargeSources = defineEnum({
+  registration: "Registration",
+  consultation: "Consultation",
+  lab_order: "Lab order",
+  prescription: "Prescription",
+  procedure: "Procedure",
+  bed_day: "Bed day",
+  manual: "Manual",
+});
+export type ChargeSource = (typeof ChargeSources.values)[number];
+
+/**
+ * Where a visit's invoice stands. `void` is the invoice-level `cancelled`;
+ * `partly_paid` is normal mid-visit, not an arrears state.
+ */
+export const InvoiceStatuses = defineEnum({
+  open: "Open",
+  partly_paid: "Partly paid",
+  paid: "Paid",
+  void: "Void",
+});
+export type InvoiceStatus = (typeof InvoiceStatuses.values)[number];
+
+/* -------------------------------------------------------------------------
    Payments
    ------------------------------------------------------------------------- */
 
@@ -561,3 +625,28 @@ export function isCriticalLabFlag(flag: LabResultFlag): boolean {
 export function isAbnormalLabFlag(flag: LabResultFlag): boolean {
   return flag !== "normal";
 }
+
+/* -------------------------------------------------------------------------
+   Analytics
+   ------------------------------------------------------------------------- */
+
+/**
+ * How one column of a `MetricResult` should be rendered.
+ *
+ * This is the whole reason the metric screens are generic. The API enumerates
+ * its metrics and returns each result as `{columns, rows}` with a type per
+ * column, so the UI needs one cell renderer per *type* — five of them — rather
+ * than one component per metric. A metric added on the backend then appears in
+ * the picker and renders correctly without a line of frontend work.
+ *
+ * `money` is an integer count of pesewas like every other amount in the API
+ * (see `~/lib/money`), not a decimal.
+ */
+export const MetricColumnTypes = defineEnum({
+  string: "Text",
+  number: "Number",
+  money: "Money",
+  date: "Date",
+  percent: "Percent",
+});
+export type MetricColumnType = (typeof MetricColumnTypes.values)[number];

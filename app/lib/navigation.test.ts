@@ -207,6 +207,11 @@ describe("findNavItem", () => {
     expect(findNavItem("/laboratory")?.label).toBe("Laboratory");
   });
 
+  it("prefers the most specific module when two of them prefix the path", () => {
+    expect(findNavItem("/analytics")?.label).toBe("Analytics");
+    expect(findNavItem("/analytics/assistant")?.label).toBe("Ask AI");
+  });
+
   it("returns nothing for a path no module owns", () => {
     expect(findNavItem("/nowhere")).toBeUndefined();
   });

@@ -39,6 +39,7 @@ import {
   AllergyPanel,
   Directions,
   DispenseTrail,
+  ItemCount,
   ItemStatusPill,
   PrescriptionStatusPill,
   StockLevel,
@@ -261,6 +262,7 @@ function DispenseForm({ item }: { item: PrescriptionItem }) {
           inputMode="decimal"
           defaultValue={item.quantityOutstanding}
           disabled={busy}
+          className="font-mono tabular-nums"
         />
       </Field>
 
@@ -421,6 +423,12 @@ function OutOfStockDialog({ item }: { item: PrescriptionItem }) {
    The item card
    ------------------------------------------------------------------------- */
 
+/**
+ * One drug, drawn as the label it becomes: the drug name over the label
+ * sentence, the quantity account beneath, and only the actions its status
+ * allows. The blue left edge marks an item the counter still owes — it is the
+ * one thing a pharmacist scans a long script for.
+ */
 function ItemCard({
   item,
   allergies,
@@ -437,21 +445,27 @@ function ItemCard({
   const active = isActiveItem(item);
 
   return (
-    <Card className="gap-0 overflow-hidden py-0">
+    <Card className="relative gap-0 overflow-hidden py-0">
+      {active && (
+        <span aria-hidden className="absolute inset-y-0 left-0 w-0.75 bg-primary" />
+      )}
+
       <div className="flex flex-wrap items-start justify-between gap-3 border-b p-4">
         <div className="min-w-0 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">{item.drugName}</span>
-            <ItemStatusPill status={item.status} />
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {item.quantityDispensed} of {item.quantityPrescribed} given
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="font-heading text-base font-semibold tracking-tight">
+              {item.drugName}
             </span>
+            <ItemStatusPill status={item.status} />
+          </div>
+          <Directions item={item} />
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5">
+            <ItemCount item={item} />
             <StockLevel
               stockOnHand={item.stockOnHand}
               required={active ? item.quantityOutstanding : undefined}
             />
           </div>
-          <Directions item={item} />
           {flagged.length > 0 && (
             <p className="text-xs font-semibold text-destructive">
               A recorded allergy names this drug: {flagged.map((a) => a.substance).join(", ")}.
@@ -473,7 +487,10 @@ function ItemCard({
             <DispenseForm item={item} />
           ) : (
             <p className="text-sm text-muted-foreground">
-              {item.quantityOutstanding} outstanding, awaiting the counter.
+              <span className="font-mono font-medium text-foreground tabular-nums">
+                {item.quantityOutstanding}
+              </span>{" "}
+              outstanding, awaiting the counter.
             </p>
           ))}
 
@@ -499,11 +516,14 @@ function ItemCard({
         )}
 
         {item.dispenses.length > 0 && (
-          <div className="space-y-1 border-t pt-3">
-            <p className="text-xs font-medium text-muted-foreground">
-              Batches handed over — this is what a recall is traced through.
+          <div className="space-y-1.5 border-t pt-3">
+            <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+              Batches handed over
             </p>
             <DispenseTrail dispenses={item.dispenses} />
+            <p className="text-xs text-muted-foreground">
+              A recall is traced through these lines.
+            </p>
           </div>
         )}
       </div>

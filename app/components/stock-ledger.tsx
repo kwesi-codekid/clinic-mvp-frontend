@@ -1,11 +1,15 @@
 /**
  * The stock ledger (T7.3), shared by the product page and `/inventory/movements`.
  *
- * The one rule this component exists to enforce: **quantities are signed.**
- * `StockMovement.quantity` is negative for anything leaving the store and
- * `balanceAfter` is the running total, so the quantity column renders with its
- * sign and its direction coloured. Printing the magnitude alone would turn a
- * write-off into a delivery.
+ * Drawn as the bin card it replaces: ledger figures in the mono face, the
+ * quantity **signed** — `StockMovement.quantity` is negative for anything
+ * leaving the store, and printing the magnitude alone would turn a write-off
+ * into a delivery — and the running balance as the emphasized column, because
+ * the balance is what a storekeeper opens the card to read. The sign carries
+ * the direction on its own; colour is kept for the one event worth spotting in
+ * a column of issues, stock arriving, which reads emerald. Nothing here is
+ * red: a wastage line is a normal record, and the cause column already names
+ * it.
  *
  * There is no edit affordance, here or anywhere: the ledger is append-only,
  * and a mistake is corrected by another movement rather than by rewriting one.
@@ -14,7 +18,6 @@
  */
 
 import { format } from "date-fns";
-import { ArrowDownRightIcon, ArrowUpRightIcon } from "lucide-react";
 import { Link } from "react-router";
 
 import {
@@ -92,31 +95,27 @@ export function StockLedger({
                   <div className="text-xs text-muted-foreground">
                     {movement.reason}
                     {movement.reason && movement.reference ? " · " : ""}
-                    {movement.reference}
+                    {movement.reference && <span className="font-mono">{movement.reference}</span>}
                   </div>
                 )}
               </TableCell>
 
               <TableCell
                 className={cn(
-                  "px-4 py-2.5 text-right text-sm font-medium tabular-nums",
-                  outward ? "text-destructive" : "text-emerald-700 dark:text-emerald-400",
+                  "px-4 py-2.5 text-right font-mono text-sm font-medium tabular-nums",
+                  outward ? "text-foreground" : "text-emerald-700 dark:text-emerald-400",
                 )}
               >
-                <span className="inline-flex items-center gap-1">
-                  {outward ? (
-                    <ArrowDownRightIcon className="size-3.5" aria-hidden />
-                  ) : (
-                    <ArrowUpRightIcon className="size-3.5" aria-hidden />
-                  )}
-                  {formatSignedQuantity(movement.quantity)}
-                </span>
+                {formatSignedQuantity(movement.quantity)}
               </TableCell>
 
-              <TableCell className="px-4 py-2.5 text-right text-sm tabular-nums">
+              <TableCell className="px-4 py-2.5 text-right font-mono text-sm font-semibold tabular-nums">
                 {movement.balanceAfter}
                 {unitOfIssue && (
-                  <span className="text-xs text-muted-foreground"> {unitOfIssue}</span>
+                  <span className="font-sans text-xs font-normal text-muted-foreground">
+                    {" "}
+                    {unitOfIssue}
+                  </span>
                 )}
               </TableCell>
             </TableRow>

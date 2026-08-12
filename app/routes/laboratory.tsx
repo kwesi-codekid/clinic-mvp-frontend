@@ -16,15 +16,17 @@
  * Staff who can read orders but not the bench (any signed-in role) get the
  * recent-orders list where the bench would be.
  *
- * Polling lives on this route — one revalidation refreshes both tabs — so
- * the worklist mounts with `pollMs={0}`. The socket events (`lab:ordered`,
- * `lab:updated`) replace the poll when T0.5 lands.
+ * Staying current lives on this route — one revalidation refreshes both tabs —
+ * so the worklist mounts with `pollMs={0}`. T0.5 landed, so that now means the
+ * `lab:ordered` and `lab:updated` socket events, with polling behind them as
+ * the fallback (see `~/hooks/use-live-revalidate`).
  */
 
 import { format } from "date-fns";
-import { FlaskConicalIcon, Loader2Icon, TimerIcon } from "lucide-react";
-import { Link, useRevalidator } from "react-router";
+import { FlaskConicalIcon, TimerIcon } from "lucide-react";
+import { Link } from "react-router";
 
+import { FreshnessNote } from "~/components/freshness-note";
 import { LabStatusPill, SpecimenBadge } from "~/components/lab-results";
 import { StationWorklist } from "~/components/station-worklist";
 import { PriorityPill } from "~/components/visit-header";
@@ -38,7 +40,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
-import { usePoll } from "~/hooks/use-poll";
+import { useLiveRevalidate } from "~/hooks/use-live-revalidate";
 import { getLabWorklist, listLabOrders } from "~/lib/api/lab";
 import { getStationCounts, getStationQueue } from "~/lib/api/queues";
 import { throwRouteError } from "~/lib/api/route-error";
@@ -64,8 +66,8 @@ export function meta() {
 /** Who `GET /lab/worklist` answers. Everyone else reads plain orders. */
 const BENCH_ROLES: readonly Role[] = ["lab", "admin"];
 
-/** Same cadence as the station worklists — see `station-worklist.tsx`. */
-const POLL_MS = 20_000;
+/** Events that mean the bench or the station queue changed. */
+const LAB_EVENTS = ["lab:ordered", "lab:updated", "queue:updated"] as const;
 
 /* -------------------------------------------------------------------------
    Loader
@@ -282,10 +284,13 @@ function OrdersList({ orders }: { orders: readonly LabOrder[] }) {
 
 export default function LaboratoryPage({ loaderData }: Route.ComponentProps) {
   const { queue, counts, orders, canBench } = loaderData;
-  const revalidator = useRevalidator();
-
-  // One poll for both tabs. Never on top of an in-flight revalidation.
-  usePoll(() => revalidator.revalidate(), POLL_MS, revalidator.state === "idle");
+  // One subscription and one poll for both tabs, which is why the worklist
+  // below mounts with `pollMs={0}` — two of these would stack requests.
+  const freshness = useLiveRevalidate({
+    events: LAB_EVENTS,
+    room: "queue:subscribe",
+    roomPayload: { station: "lab" },
+  });
 
   return (
     <div className="space-y-6">
@@ -304,15 +309,8 @@ export default function LaboratoryPage({ loaderData }: Route.ComponentProps) {
             <TabsTrigger value="bench">{canBench ? "Bench" : "Orders"}</TabsTrigger>
             <TabsTrigger value="queue">Patient queue</TabsTrigger>
           </TabsList>
-          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            {revalidator.state === "idle" ? (
-              <>Updates every {Math.round(POLL_MS / 1000)}s</>
-            ) : (
-              <>
-                <Loader2Icon className="size-3.5 animate-spin" />
-                Refreshing…
-              </>
-            )}
+          <span className="text-sm text-muted-foreground">
+            <FreshnessNote {...freshness} />
           </span>
         </div>
 
