@@ -284,6 +284,64 @@ export const Dispositions = defineEnum({
 export type Disposition = (typeof Dispositions.values)[number];
 
 /* -------------------------------------------------------------------------
+   Clinical capture
+   ------------------------------------------------------------------------- */
+
+/**
+ * How loudly a vitals reading is out of range.
+ *
+ * Note this is **not** the lab result flag set (low/normal/high/critical_*):
+ * a `VitalFlag` only ever exists for a reading worth mentioning, so there is no
+ * `normal` member — an unflagged observation simply produces no flag at all.
+ * Declared most-urgent first, which is the order the flag list renders in.
+ */
+export const VitalFlagSeverities = defineEnum({
+  critical: "Critical",
+  warning: "Warning",
+  info: "Note",
+});
+export type VitalFlagSeverity = (typeof VitalFlagSeverities.values)[number];
+
+const VITAL_SEVERITY_RANK: Record<VitalFlagSeverity, number> = {
+  critical: 0,
+  warning: 1,
+  info: 2,
+};
+
+/** Sorts flags critical-first, so the reading that matters leads the list. */
+export function compareVitalSeverity(a: VitalFlagSeverity, b: VitalFlagSeverity): number {
+  return VITAL_SEVERITY_RANK[a] - VITAL_SEVERITY_RANK[b];
+}
+
+/**
+ * How settled a diagnosis is.
+ *
+ * `differential` is one of several being considered, not a conclusion — it must
+ * never be the primary diagnosis, and Phase 10 does not claim against it.
+ */
+export const DiagnosisTypes = defineEnum({
+  provisional: "Provisional",
+  final: "Final",
+  differential: "Differential",
+});
+export type DiagnosisType = (typeof DiagnosisTypes.values)[number];
+
+/**
+ * How the note index answered a similarity search.
+ *
+ * `semantic` compares meaning through embeddings and is what makes "burning on
+ * passing urine" find a note that says dysuria. `lexical` is the fallback when
+ * the AI provider is unreachable: plain text matching, so the same query finds
+ * far less. The panel must say which one ran — the two produce very different
+ * result sets and a clinician should know which they are reading.
+ */
+export const NoteSearchModes = defineEnum({
+  semantic: "Semantic",
+  lexical: "Text match",
+});
+export type NoteSearchMode = (typeof NoteSearchModes.values)[number];
+
+/* -------------------------------------------------------------------------
    Payments
    ------------------------------------------------------------------------- */
 

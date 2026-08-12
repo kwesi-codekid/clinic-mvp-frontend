@@ -24,16 +24,20 @@ import {
   BanIcon,
   DoorClosedIcon,
   FileTextIcon,
+  HeartPulseIcon,
   Loader2Icon,
+  NotebookPenIcon,
   RouteIcon,
+  StethoscopeIcon,
 } from "lucide-react";
 import { data, Form, Link, useNavigation, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
+import { PatientHistory } from "~/components/patient-history";
 import { StationTimeline } from "~/components/station-timeline";
 import { PageHeader } from "~/components/page-header";
 import { VisitHeader } from "~/components/visit-header";
-import { Button } from "~/components/ui/button";
+import { Button, buttonVariants } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
   Dialog,
@@ -55,8 +59,9 @@ import {
 } from "~/components/ui/select";
 import { Textarea } from "~/components/ui/textarea";
 import { ApiError, describeApiError } from "~/lib/api/client";
+import { listConsultations } from "~/lib/api/consultations";
 import { throwRouteError } from "~/lib/api/route-error";
-import { cancelVisit, closeVisit, getVisit, moveVisit } from "~/lib/api/visits";
+import { cancelVisit, closeVisit, getVisit, listVisits, moveVisit } from "~/lib/api/visits";
 import { requireStaff, requireStaffAction } from "~/lib/auth.server";
 import {
   Dispositions,
@@ -86,14 +91,41 @@ export function meta({ loaderData }: Route.MetaArgs) {
 /** Roles the API lets cancel a visit. UX routing only — it is the authority. */
 const CANCEL_ROLES = ["records", "admin"] as const;
 
+/** Past attendances the history card shows before admitting there are more. */
+const HISTORY_LIMIT = 5;
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const { accessToken, staff } = await requireStaff(request);
   const id = parseObjectId(params.visitId, "visit id");
+  const opts = { token: accessToken };
 
   try {
+    const visit = await getVisit(id, opts);
+
+    // The history is the patient's, so it waits on the visit to name them.
+    // One extra row is fetched because this visit is in its own list; notes
+    // are over-fetched so drafts and amendments cannot starve the join.
+    const [historyPage, notePage] = await Promise.all([
+      listVisits(
+        { patientId: visit.patient.id, sort: "-arrivedAt", limit: HISTORY_LIMIT + 1 },
+        opts,
+      ),
+      listConsultations(
+        { patientId: visit.patient.id, sort: "-createdAt", limit: (HISTORY_LIMIT + 1) * 2 },
+        opts,
+      ),
+    ]);
+
     return {
-      visit: await getVisit(id, { token: accessToken }),
+      visit,
       canCancel: staff.roles.some((role) => CANCEL_ROLES.some((allowed) => allowed === role)),
+      pastVisits: historyPage.items
+        .filter((entry) => entry.id !== visit.id)
+        .slice(0, HISTORY_LIMIT),
+      // This visit is always among the patient's visits, so "previous" is
+      // the total less one — even when it fell outside the fetched page.
+      pastTotal: Math.max(0, historyPage.meta.total - 1),
+      consultations: notePage.items,
     };
   } catch (error) {
     throwRouteError(error);
@@ -484,7 +516,7 @@ const NOTICES: Record<string, string> = {
 type OpenDialog = "move" | "close" | "cancel" | null;
 
 export default function VisitPage({ loaderData, actionData }: Route.ComponentProps) {
-  const { visit, canCancel } = loaderData;
+  const { visit, canCancel, pastVisits, pastTotal, consultations } = loaderData;
   const navigation = useNavigation();
   const busy = navigation.formData != null;
 
@@ -630,6 +662,44 @@ export default function VisitPage({ loaderData, actionData }: Route.ComponentPro
           </CardContent>
         </Card>
       </div>
+
+      {/* What was clinically recorded on this attendance (Phase 5). Links
+          rather than embedded panels: each is a screen a station works in for
+          the length of a patient, not a summary read in passing. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <StethoscopeIcon className="size-4 text-muted-foreground" />
+            Clinical record
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-3">
+          <Link
+            to={`/visits/${visit.id}/vitals`}
+            className={buttonVariants({ variant: "outline" })}
+          >
+            <HeartPulseIcon />
+            Vitals
+          </Link>
+          <Link
+            to={`/visits/${visit.id}/consultation`}
+            className={buttonVariants({ variant: "outline" })}
+          >
+            <NotebookPenIcon />
+            Consultation note
+          </Link>
+        </CardContent>
+      </Card>
+
+      {/* The patient's other attendances — the context read before this one.
+          This visit itself is excluded: the rest of the screen *is* it. */}
+      <PatientHistory
+        visits={pastVisits}
+        total={pastTotal}
+        consultations={consultations}
+        title="Patient history"
+        emptyMessage="This is the patient's first attendance — nothing earlier on record."
+      />
 
       {open && (
         <>

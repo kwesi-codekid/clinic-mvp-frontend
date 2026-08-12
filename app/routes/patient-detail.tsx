@@ -29,11 +29,13 @@ import { toast } from "sonner";
 
 import { avatarTint, initialsOf, StatusPill } from "~/components/directory";
 import { PageHeader } from "~/components/page-header";
+import { PatientHistory } from "~/components/patient-history";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { buttonVariants } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { listConsultations } from "~/lib/api/consultations";
 import { getPatient } from "~/lib/api/patients";
-import { getOpenVisit } from "~/lib/api/visits";
+import { getOpenVisit, listVisits } from "~/lib/api/visits";
 import { throwRouteError } from "~/lib/api/route-error";
 import { requireStaff } from "~/lib/auth.server";
 import { cn } from "~/lib/utils";
@@ -55,6 +57,9 @@ export function meta({ loaderData }: Route.MetaArgs) {
   return [{ title: loaderData ? `${loaderData.patient.fullName} · Clinic` : "Patient · Clinic" }];
 }
 
+/** Attendances the history card shows before admitting there are more. */
+const HISTORY_LIMIT = 10;
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const { accessToken } = await requireStaff(request);
   const id = parseObjectId(params.patientId, "patient id");
@@ -63,12 +68,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   try {
     // Whether this patient is in the building right now decides what the
     // folder offers: their current visit, or a way to open one (T3.2).
-    const [patient, openVisit] = await Promise.all([
+    // The visit and consultation lists are the folder's history — what each
+    // attendance was, and what it was coded as. Notes are over-fetched at
+    // twice the visit limit so drafts and amendments cannot starve the join.
+    const [patient, openVisit, visitHistory, notePage] = await Promise.all([
       getPatient(id, opts),
       getOpenVisit(id, opts),
+      listVisits({ patientId: id, sort: "-arrivedAt", limit: HISTORY_LIMIT }, opts),
+      listConsultations({ patientId: id, sort: "-createdAt", limit: HISTORY_LIMIT * 2 }, opts),
     ]);
 
-    return { patient, openVisit };
+    return { patient, openVisit, visitHistory, consultations: notePage.items };
   } catch (error) {
     throwRouteError(error);
   }
@@ -227,7 +237,7 @@ const NOTICES: Record<string, string> = {
 };
 
 export default function PatientFolderPage({ loaderData }: Route.ComponentProps) {
-  const { patient, openVisit } = loaderData;
+  const { patient, openVisit, visitHistory, consultations } = loaderData;
   const [searchParams, setSearchParams] = useSearchParams();
 
   const noticeKey = Object.keys(NOTICES).find((key) => searchParams.has(key));
@@ -500,6 +510,16 @@ export default function PatientFolderPage({ loaderData }: Route.ComponentProps) 
           )}
         </CardContent>
       </Card>
+
+      {/* Every attendance this folder has had, with what each was coded as.
+          The open visit appears here too — the history is the record, and the
+          banner above is merely today's pointer into it. */}
+      <PatientHistory
+        visits={visitHistory.items}
+        total={visitHistory.meta.total}
+        consultations={consultations}
+        emptyMessage="No visits yet — this folder has never been checked in."
+      />
     </div>
   );
 }

@@ -18,6 +18,10 @@ export default [
     route("visits", "routes/visits.tsx"),
     route("visits/new", "routes/visit-new.tsx"),
     route("visits/:visitId", "routes/visit-detail.tsx"),
+    // Clinical capture, worked in for the length of a patient rather than
+    // embedded in the visit page.
+    route("visits/:visitId/vitals", "routes/visit-vitals.tsx"),
+    route("visits/:visitId/consultation", "routes/visit-consultation.tsx"),
     // Queues: OPD is the `consulting` station's worklist; every other station
     // is the same screen under `/queues/:station`. `queues/actions` is the
     // write-only resource route the worklist posts to, and must outrank
@@ -25,6 +29,14 @@ export default [
     route("opd", "routes/opd.tsx"),
     route("queues/actions", "routes/queue-actions.tsx"),
     route("queues/:station", "routes/station-queue.tsx"),
+    // Read-only resource routes backing the live lookups the clinical screens
+    // make. They render nothing; they exist so the access token can stay in its
+    // httpOnly cookie. All three are `GET` — even the two whose API call is a
+    // `POST` — so a `fetcher.load()` answers a keystroke without revalidating
+    // the screen that asked.
+    route("resources/icd10", "routes/resource-icd10.tsx"),
+    route("resources/vitals-preview", "routes/resource-vitals-preview.tsx"),
+    route("resources/note-search", "routes/resource-note-search.tsx"),
     // Unbuilt sidebar modules land on a placeholder until their route exists.
     route("*", "routes/coming-soon.tsx"),
   ]),

@@ -104,11 +104,15 @@ app/
 | Phase 0 — Foundations | **Done** — `primitives.ts`, `enums.ts`, `money.ts` (+tests), `lib/api/client.ts` (+integration test), root layout, ~35 shadcn primitives, `route-error.tsx` |
 | Phase 1 — Identity | **T1.1/T1.2 done** (`models/staff.ts`, `models/auth.ts`, `lib/auth.server.ts`, login/logout routes). **T1.3 pending** — `NAV_GROUPS` in `app-shell.tsx` is unfiltered. **T1.4 (search) not started** — the topbar search box is a dumb `Input` |
 | Phase 2 — Patient | **Done** — `models/patient.ts`, registration/folder/edit/merge routes, `patient-form.tsx`, `duplicate-candidates.tsx` |
-| Phase 3 — Visit | **In progress, uncommitted** — `models/visit.ts`, `lib/api/visits.ts`, `visit-header.tsx`, `station-timeline.tsx`, `visits.tsx`, `visit-new.tsx`. `move`/`close`/`cancel` not wired yet |
-| Phase 14 — Admin | **T14.1 done out of order** (`staff.tsx`, `staff-drawer.tsx`, `lib/api/staff.ts`). **T14.2 not started** — nothing fetches `GET /facility` yet, which Phases 6/7/11/15 need for feature gating. `lib/api/platform.ts` covers T14.3's health call |
-| Phases 4–13, 15 | Not started |
+| Phase 3 — Visit | **Done** — `models/visit.ts`, `lib/api/visits.ts`, `visit-header.tsx`, `station-timeline.tsx`, `visits.tsx`, `visit-new.tsx`, `visit-detail.tsx` with move/close/cancel |
+| Phase 4 — Queues | **Done** — `models/queue.ts` (+tests), `lib/api/queues.ts`, `station-queue.tsx`, `opd.tsx`, `queue-actions.tsx`, polling hook |
+| Phase 5 — Clinical capture | **Done** — `models/vitals.ts`, `models/consultation.ts`, `lib/api/{vitals,consultations,notes}.ts`, `vital-flags.tsx`, `icd10-picker.tsx`, `similar-notes.tsx`, `visit-vitals.tsx`, `visit-consultation.tsx`, and three `resources/*` routes |
+| Phase 14 — Admin | **T14.1 done out of order** (`staff.tsx`, `staff-drawer.tsx`, `lib/api/staff.ts`). **T14.2 partly** — `models/facility.ts` and `lib/api/facility.ts` exist; the root loader still does not fetch `GET /facility`, which Phases 6/7/11/15 need for feature gating. `lib/api/platform.ts` covers T14.3's health call |
+| Phases 6–13, 15 | Not started |
 
 `app/lib/api/*` already targets the current paths (`/patients/check-duplicates`, `/visits/open`, `/auth/logout`) — the code kept pace with the API; this plan is what had drifted.
+
+**Pattern established in Phase 5, reusable from here on**: live lookups go through read-only `resources/*` routes rather than actions on the screen that needs them. The access token lives in an httpOnly cookie so the browser cannot call the API directly, and a `GET` `fetcher.load()` answers a keystroke *without* revalidating the calling route. Two of the three wrap an API `POST` that writes nothing (`/vitals/preview`, `/analytics/notes/search`) — exposing them as `GET` is what keeps them off the revalidation path. Phases 6–8 need the same for lab analytes, drug lookup and price quotes.
 
 ---
 
@@ -134,10 +138,12 @@ app/
 | `ClaimStatuses` | draft, vetted, batched, submitted, paid, part_paid, rejected, resubmitted | T10.1 |
 | `ClaimBatchStatuses` | open, submitted, paid, part_paid, closed | T10.1 |
 | `ExceptionSeverities` | blocking, warning, info | T10.1 |
-| `VitalFlagSeverities` | low, normal, high, critical_low, critical_high, abnormal | T5.1 |
-| `DiagnosisTypes` | provisional, final, differential | T5.2 |
+| ~~`VitalFlagSeverities`~~ ✅ | info, warning, critical | T5.1 — **done** |
+| ~~`DiagnosisTypes`~~ ✅ | provisional, final, differential | T5.2 — **done** |
+| ~~`NoteSearchModes`~~ ✅ | semantic, lexical | T5.3 — **done** |
 | `LabOrderStatuses` | ordered, collected, resulted, verified, rejected | T6.2 |
 | `LabResultTypes` | numeric, text, select | T6.2 |
+| `LabResultFlags` | low, normal, high, critical_low, critical_high, abnormal | T6.2 |
 | `PrescriptionItemStatuses` | pending, dispensed, partially_dispensed, out_of_stock, substituted | T7.2 |
 | `ProductCategories` | drug, consumable, reagent, equipment | T7.1 |
 | `StockMovementTypes` | receipt, dispense, adjustment, wastage, expiry, return, stock_take | T7.1 |
@@ -260,37 +266,45 @@ app/
 
 ---
 
-## Phase 5 — Clinical capture (L1)
+## Phase 5 — Clinical capture (L1) ✅
 
 Parallelisable once Phase 3 lands.
 
-### T5.1 — Vitals
+### T5.1 — Vitals ✅
 - **Defines**: `VitalFlag`, `VitalsPreview` (L0); `RecordVitals`, `Vitals` → `ObjectId, VitalFlag`.
 - **Blocked by**: T3.1, T4.2
 - **Endpoints**: **`POST /vitals`** (body carries `visitId`), `GET /vitals`, `GET /vitals/{id}`, **`POST /vitals/preview`**.
-- **Deliverable**: vitals entry form with `VitalFlag` severity highlighting on out-of-range readings.
+- **Deliverable**: `app/models/vitals.ts`, `app/lib/api/vitals.ts`, `app/components/vital-flags.tsx`, `app/routes/visit-vitals.tsx`, and the `/resources/vitals-preview` resource route.
 - **Fields**: temperature, systolic, diastolic, pulse, respiratoryRate, spo2, weightKg, heightCm, randomBloodSugar, fastingBloodSugar, **muacCm**, **painScore**, notes.
 - **Notes**:
-  - `POST /vitals/preview` returns `{bmi, flags}` **without saving** — call it on blur so the nurse sees the flag while the cuff is still on the arm. This replaces any client-side range logic; the server uses paediatric pulse/respiratory ranges for children.
-  - Vitals are posted to a top-level collection with `visitId` in the body, *not* nested under the visit.
-  - A critical reading is pushed to the ordering clinician over the socket — Phase 5 raises it, Phase 5.2/15 consumes it.
+  - `POST /vitals/preview` returns `{bmi, flags}` **without saving** — debounced as the nurse types, so the flag appears while the cuff is still on the arm. There is deliberately **no client-side range table**: `VITAL_BOUNDS` in the model holds the API's own *input* limits (a temperature of 4 °C is a typo) and nothing about what is clinically normal.
+  - **`ageYears` must be sent to the preview.** It has no `visitId`, so the API cannot look the patient up, and without an age it grades against **adult** ranges — silently under-flagging a child. `previewVitalsForAge()` makes the argument mandatory so it cannot be dropped.
+  - `VitalFlag.severity` is **info / warning / critical**, with no `normal` member — a flag only exists for a reading worth mentioning, so an empty `flags[]` means "nothing to report", never "not checked". (The low/normal/high/critical_* set is `LabResultValue.flag`, T6.2.)
+  - Vitals are posted to a top-level collection with `visitId` in the body, *not* nested under the visit, and are **never edited** — a recheck is a new set, so the screen lists every set on the visit rather than replacing one.
+  - A critical reading is pushed to the ordering clinician over the socket. Until T0.5 lands, the screen says so itself on the saved set.
 
-### T5.2 — Consultation
+### T5.2 — Consultation ✅
 - **Defines**: `Diagnosis`, `DiagnosisInput`, `Amendment`, `Icd10Entry` (L0); `Consultation`; `WriteConsultation`, `AmendConsultation`.
 - **Blocked by**: T5.1
 - **Endpoints**: `POST /consultations`, `GET /consultations`, `GET /consultations/{id}`, **`POST /consultations/{id}/amend`**, **`GET /consultations/icd10`** (search), **`GET /consultations/icd10/all`**.
-- **Deliverable**: SOAP-style note editor (presenting complaint → HPC → ROS → PMH → examination → assessment → plan), ICD-10 diagnosis picker with primary flag and `DiagnosisType` (provisional/final/differential), follow-up date.
+- **Deliverable**: `app/models/consultation.ts`, `app/lib/api/consultations.ts`, `app/components/icd10-picker.tsx`, `app/routes/visit-consultation.tsx`, and the `/resources/icd10` typeahead route.
 - **Notes**:
-  - Amending a signed note goes through **`POST /{id}/amend`** — there is no `PUT`. The amendment path is the only way to change a signed note, and the audit trail (`Amendment[]`) must be visible.
-  - The ICD-10 subset now has its own endpoints. `GET /consultations/icd10/all` is small enough to cache client-side for offline picking; `GET /consultations/icd10` is the typeahead.
-  - `Diagnosis.notifiable` and `dhims2Group` feed Phase 13 reporting; surface the notifiable flag at entry time.
+  - **`POST /consultations` is an upsert keyed on the visit** — one note per visit, and posting again replaces it *until it is signed*. So "save draft, come back after the lab result" is the same call as writing it, and the whole note must go up each time rather than the changed fields. Once signed it answers `409`.
+  - Amending goes through **`POST /{id}/amend`** — there is no `PUT`. The screen shows **no edit affordance at all** on a signed note, not even a disabled one; the amendment trail (`Amendment[]`) is the record's defence and is always visible.
+  - The ICD-10 subset has its own endpoints. `GET /consultations/icd10/all` is small enough to cache client-side for offline picking; `GET /consultations/icd10` is the typeahead behind the picker.
+  - `Diagnosis.notifiable` and `dhims2Group` are resolved by the API from the catalogue and are **not** the clinician's to set — both are surfaced at the moment of coding, since the point of notifying the district is that it happens while the patient is still reachable.
+  - `signingProblems()` in the model holds the rules that gate signing (assessment written, one diagnosis, exactly one primary, a differential can never be primary, no duplicate codes) so writing and amending cannot enforce different ones. A **draft is not validated** — a half-written note is a legitimate save when a patient is called away.
 
-### T5.3 — Clinical note search
+### T5.3 — Clinical note search ✅
 - **Defines**: `NoteMatch` (L0), `NoteSearchResult` → `NoteMatch`, `NoteIndexResult`.
 - **Blocked by**: T5.2
 - **Endpoints**: **`POST /analytics/notes/search`**, **`POST /analytics/notes/index`**.
-- **Deliverable**: similar-notes panel. `NoteSearchResult.available` can be false (index not built) — design the empty state first, and put the re-index action behind admin.
-- **Note**: these moved from `/consultations/*` to the Analytics tag. Search modes are `semantic` and `lexical`; semantic degrades to lexical when the AI service is disabled.
+- **Deliverable**: `app/components/similar-notes.tsx` beside the note editor, and the `/resources/note-search` route.
+- **Notes**:
+  - these moved from `/consultations/*` to the Analytics tag. Search modes are `semantic` and `lexical`; semantic degrades to lexical when the AI service is disabled, and **the mode is always on screen** — an empty semantic result and an empty lexical one mean very different things.
+  - `available: false` (index not built) renders as prose explaining why, never as an empty list — the empty state was built first for exactly this reason.
+  - Searching is explicit rather than live: it reads other patients' records, so it should be an act the clinician chose. `403`, `404` and 5xx all degrade to a quiet message rather than interrupting a consultation.
+  - `POST /analytics/notes/index` is admin-only and batched (`remaining > 0` means run again) — it belongs on an operations screen, not here.
 
 ---
 
