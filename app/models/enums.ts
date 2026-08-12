@@ -80,6 +80,18 @@ export const Stations = defineEnum({
 });
 export type Station = (typeof Stations.values)[number];
 
+/**
+ * What kind of establishment this deployment serves. Drives copy, not
+ * behaviour — what a clinic can actually *do* is `FacilitySettings`.
+ */
+export const FacilityTypes = defineEnum({
+  clinic: "Clinic",
+  hospital: "Hospital",
+  maternity_home: "Maternity home",
+  health_centre: "Health centre",
+});
+export type FacilityType = (typeof FacilityTypes.values)[number];
+
 /** The council a clinical staff member is registered with, if any. */
 export const LicenceCouncils = defineEnum({
   MDC: "Medical & Dental Council",
@@ -203,6 +215,20 @@ export const VisitTypes = defineEnum({
   walk_in_pharmacy: "Walk-in pharmacy",
 });
 export type VisitType = (typeof VisitTypes.values)[number];
+
+/**
+ * Where a visit stands.
+ *
+ * `cancelled` is not a failed `closed`: it is the patient who left before
+ * anyone saw them, so it carries no {@link Disposition} and nothing was
+ * clinically recorded. Only an `open` visit accepts work.
+ */
+export const VisitStatuses = defineEnum({
+  open: "Open",
+  closed: "Closed",
+  cancelled: "Cancelled",
+});
+export type VisitStatus = (typeof VisitStatuses.values)[number];
 
 /**
  * Queue and visit urgency. Declared most-urgent first, which is also the order

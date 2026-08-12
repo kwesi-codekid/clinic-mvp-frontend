@@ -4,36 +4,22 @@
  * Insights), and a topbar carrying global search, theme, notifications and
  * the signed-in staff member.
  *
- * `NAV_GROUPS` is the single nav source of truth — T1.3 will filter it by
- * `staff.roles`/`station` and the facility's feature flags before it reaches
- * the sidebar; the shell itself stays dumb about permissions.
+ * The shell is dumb about permissions on purpose: it renders whatever
+ * {@link buildNav} hands it, and that function — not this file — is where the
+ * facility's feature flags and the staff member's roles decide what exists.
  *
  * The sidebar collapses to an icon rail (trigger in its header, the rail edge
  * or ⌘/Ctrl+B to bring it back) and becomes a sheet on mobile, where the
  * trigger moves into the topbar.
  */
 
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import {
-  BedDoubleIcon,
   BellIcon,
-  BoxesIcon,
-  ChartColumnIcon,
   ChevronsUpDownIcon,
   CrossIcon,
-  FileTextIcon,
-  FlaskConicalIcon,
-  IdCardIcon,
-  LayoutDashboardIcon,
   LogOutIcon,
-  PillIcon,
-  ReceiptTextIcon,
-  ScanIcon,
-  ScissorsIcon,
   SearchIcon,
-  SettingsIcon,
-  StethoscopeIcon,
-  UsersRoundIcon,
 } from "lucide-react";
 import { Link, useLocation, useSubmit } from "react-router";
 import { toast } from "sonner";
@@ -66,77 +52,19 @@ import {
   SidebarRail,
   SidebarTrigger,
 } from "~/components/ui/sidebar";
+import { buildNav, findNavItem, type NavGroup } from "~/lib/navigation";
+import type { Facility } from "~/models/facility";
 import type { Staff } from "~/models/staff";
-
-/* -------------------------------------------------------------------------
-   Navigation
-   ------------------------------------------------------------------------- */
-
-export type NavItem = {
-  label: string;
-  to: string;
-  icon: React.ComponentType<{ className?: string }>;
-};
-
-export type NavGroup = {
-  /** Section heading; `null` for the ungrouped block at the top. */
-  label: string | null;
-  items: NavItem[];
-};
-
-export const NAV_GROUPS: NavGroup[] = [
-  {
-    label: null,
-    items: [{ label: "Dashboard", to: "/", icon: LayoutDashboardIcon }],
-  },
-  {
-    label: "Clinical",
-    items: [
-      { label: "OPD", to: "/opd", icon: StethoscopeIcon },
-      { label: "IPD & Beds", to: "/ipd", icon: BedDoubleIcon },
-      { label: "EMR/EHR", to: "/emr", icon: FileTextIcon },
-      { label: "Operation Theatre", to: "/operation-theatre", icon: ScissorsIcon },
-    ],
-  },
-  {
-    label: "Diagnostics",
-    items: [
-      { label: "Laboratory", to: "/laboratory", icon: FlaskConicalIcon },
-      { label: "Radiology", to: "/radiology", icon: ScanIcon },
-      { label: "Pharmacy", to: "/pharmacy", icon: PillIcon },
-    ],
-  },
-  {
-    label: "Operations",
-    items: [
-      { label: "Patients", to: "/patients", icon: UsersRoundIcon },
-      { label: "Staff", to: "/staff", icon: IdCardIcon },
-      { label: "Inventory", to: "/inventory", icon: BoxesIcon },
-    ],
-  },
-  {
-    label: "Finance & Insights",
-    items: [
-      { label: "Billing", to: "/billing", icon: ReceiptTextIcon },
-      { label: "Analytics", to: "/analytics", icon: ChartColumnIcon },
-      { label: "Settings", to: "/settings", icon: SettingsIcon },
-    ],
-  },
-];
-
-/** The sidebar item whose route owns `pathname`, if any. */
-export function findNavItem(pathname: string): NavItem | undefined {
-  return NAV_GROUPS.flatMap((group) => group.items).find((item) =>
-    item.to === "/" ? pathname === "/" : pathname.startsWith(item.to),
-  );
-}
 
 /* -------------------------------------------------------------------------
    Sidebar
    ------------------------------------------------------------------------- */
 
-function AppSidebar() {
+function AppSidebar({ nav }: { nav: NavGroup[] }) {
   const { pathname } = useLocation();
+  // Matched against the whole catalogue, not `nav`: a module someone is not
+  // offered can still be the page they are standing on.
+  const active = findNavItem(pathname)?.to;
 
   return (
     <Sidebar collapsible="icon">
@@ -155,7 +83,7 @@ function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        {NAV_GROUPS.map((group) => (
+        {nav.map((group) => (
           <SidebarGroup key={group.label ?? "main"} className="py-1">
             {group.label && <SidebarGroupLabel>{group.label}</SidebarGroupLabel>}
             <SidebarGroupContent>
@@ -163,7 +91,7 @@ function AppSidebar() {
                 {group.items.map((item) => (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton
-                      isActive={findNavItem(pathname)?.to === item.to}
+                      isActive={active === item.to}
                       tooltip={item.label}
                       render={<Link to={item.to} />}
                     >
@@ -284,17 +212,28 @@ function Topbar({ staff }: { staff: Staff }) {
 
 export function AppShell({
   staff,
+  facility,
   defaultSidebarOpen = true,
   children,
 }: {
   staff: Staff;
+  /**
+   * The clinic, for the feature flags that switch modules on and off.
+   * `null` when `GET /facility` could not be read — the nav falls open rather
+   * than hiding modules over a failed request.
+   */
+  facility: Facility | null;
   /** From the `sidebar_state` cookie, so SSR renders the persisted state. */
   defaultSidebarOpen?: boolean;
   children: ReactNode;
 }) {
+  // Built here rather than in the loader: `NavItem.icon` is a React component
+  // and would not survive serialisation across that boundary.
+  const nav = useMemo(() => buildNav(staff, facility), [staff, facility]);
+
   return (
     <SidebarProvider defaultOpen={defaultSidebarOpen}>
-      <AppSidebar />
+      <AppSidebar nav={nav} />
       <SidebarInset>
         <Topbar staff={staff} />
         <div className="flex-1 bg-muted/40 px-4 py-6 dark:bg-transparent sm:px-6">

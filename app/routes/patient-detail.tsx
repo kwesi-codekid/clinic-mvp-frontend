@@ -18,7 +18,9 @@ import { useEffect } from "react";
 import { format, formatDistanceToNow } from "date-fns";
 import {
   ActivityIcon,
+  ArrowRightIcon,
   GitMergeIcon,
+  LogInIcon,
   PencilIcon,
   TriangleAlertIcon,
 } from "lucide-react";
@@ -31,6 +33,7 @@ import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { buttonVariants } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { getPatient } from "~/lib/api/patients";
+import { getOpenVisit } from "~/lib/api/visits";
 import { throwRouteError } from "~/lib/api/route-error";
 import { requireStaff } from "~/lib/auth.server";
 import { cn } from "~/lib/utils";
@@ -42,6 +45,7 @@ import {
   MobileNetworks,
   NhisExemptionCategories,
   Sexes,
+  Stations,
 } from "~/models/enums";
 import { describeAllergy, type Patient, type PayerProfile } from "~/models/patient";
 import { parseObjectId } from "~/models/primitives";
@@ -54,9 +58,17 @@ export function meta({ loaderData }: Route.MetaArgs) {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const { accessToken } = await requireStaff(request);
   const id = parseObjectId(params.patientId, "patient id");
+  const opts = { token: accessToken };
 
   try {
-    return { patient: await getPatient(id, { token: accessToken }) };
+    // Whether this patient is in the building right now decides what the
+    // folder offers: their current visit, or a way to open one (T3.2).
+    const [patient, openVisit] = await Promise.all([
+      getPatient(id, opts),
+      getOpenVisit(id, opts),
+    ]);
+
+    return { patient, openVisit };
   } catch (error) {
     throwRouteError(error);
   }
@@ -215,7 +227,7 @@ const NOTICES: Record<string, string> = {
 };
 
 export default function PatientFolderPage({ loaderData }: Route.ComponentProps) {
-  const { patient } = loaderData;
+  const { patient, openVisit } = loaderData;
   const [searchParams, setSearchParams] = useSearchParams();
 
   const noticeKey = Object.keys(NOTICES).find((key) => searchParams.has(key));
@@ -234,6 +246,8 @@ export default function PatientFolderPage({ loaderData }: Route.ComponentProps) 
   }, [noticeKey]);
 
   const ageIsEstimate = patient.age.accuracy !== "exact";
+  // A retired or deceased folder must not start a new attendance.
+  const canCheckIn = !patient.mergedInto && !patient.isDeceased && !openVisit;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -255,11 +269,55 @@ export default function PatientFolderPage({ loaderData }: Route.ComponentProps) 
           <GitMergeIcon />
           Merge duplicate
         </Link>
-        <Link to={`/patients/${patient.id}/edit`} className={buttonVariants()}>
+        <Link
+          to={`/patients/${patient.id}/edit`}
+          className={buttonVariants({ variant: "outline" })}
+        >
           <PencilIcon />
           Edit details
         </Link>
+        {openVisit ? (
+          <Link to={`/visits/${openVisit.id}`} className={buttonVariants()}>
+            <ArrowRightIcon />
+            Open current visit
+          </Link>
+        ) : (
+          canCheckIn && (
+            <Link
+              to={`/visits/new?patientId=${patient.id}`}
+              className={buttonVariants()}
+            >
+              <LogInIcon />
+              Check in
+            </Link>
+          )
+        )}
       </PageHeader>
+
+      {openVisit && (
+        <div
+          role="note"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 text-sm"
+        >
+          <div>
+            <p className="font-medium">This patient is in the clinic now.</p>
+            <p className="text-muted-foreground">
+              Visit <span className="font-mono">{openVisit.visitNumber}</span> opened{" "}
+              {format(new Date(openVisit.arrivedAt), "d MMM 'at' HH:mm")}
+              {openVisit.currentStation
+                ? ` · now at ${Stations.label(openVisit.currentStation)}`
+                : " · not queued"}
+              .
+            </p>
+          </div>
+          <Link
+            to={`/visits/${openVisit.id}`}
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            Open visit
+          </Link>
+        </div>
+      )}
 
       {patient.mergedInto && (
         <div

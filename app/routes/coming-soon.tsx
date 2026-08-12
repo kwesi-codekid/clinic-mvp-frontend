@@ -11,7 +11,7 @@
 import { ConstructionIcon } from "lucide-react";
 import { data, Link, useLocation } from "react-router";
 
-import { findNavItem } from "~/components/app-shell";
+import { findNavItem } from "~/lib/navigation";
 import { buttonVariants } from "~/components/ui/button";
 import type { Route } from "./+types/coming-soon";
 

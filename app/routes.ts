@@ -13,6 +13,11 @@ export default [
     route("patients/:patientId", "routes/patient-detail.tsx"),
     route("patients/:patientId/edit", "routes/patient-edit.tsx"),
     route("patients/:patientId/merge", "routes/patient-merge.tsx"),
+    // Visits: the clinic day, check-in, and one visit's lifecycle. Same
+    // static-before-`:visitId` ordering as patients, for the same reason.
+    route("visits", "routes/visits.tsx"),
+    route("visits/new", "routes/visit-new.tsx"),
+    route("visits/:visitId", "routes/visit-detail.tsx"),
     // Unbuilt sidebar modules land on a placeholder until their route exists.
     route("*", "routes/coming-soon.tsx"),
   ]),
