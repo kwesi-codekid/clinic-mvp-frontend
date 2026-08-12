@@ -4,6 +4,7 @@ export default [
   // Everything inside the app shell requires a signed-in staff member.
   layout("routes/app-layout.tsx", [
     index("routes/home.tsx"),
+    route("staff", "routes/staff.tsx"),
     // Unbuilt sidebar modules land on a placeholder until their route exists.
     route("*", "routes/coming-soon.tsx"),
   ]),

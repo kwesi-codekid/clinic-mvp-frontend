@@ -153,7 +153,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
   const [showPassword, setShowPassword] = useState(false);
 
   const underlineInput =
-    "h-9 rounded-none border-0 border-b border-[#2aa2ab]/35 bg-transparent px-0 text-[13px] text-slate-700 placeholder:text-slate-400 focus-visible:border-[#2aa2ab] focus-visible:shadow-[0_1px_0_0_#2aa2ab] focus-visible:ring-0 md:text-[13px] dark:bg-transparent";
+    "h-10 rounded-none border-0 border-b border-[#2aa2ab]/35 bg-transparent px-0 text-[15px] text-slate-700 placeholder:text-slate-400 focus-visible:border-[#2aa2ab] focus-visible:shadow-[0_1px_0_0_#2aa2ab] focus-visible:ring-0 md:text-[15px] dark:bg-transparent";
 
   return (
     <main className="relative flex min-h-svh items-center justify-center overflow-hidden bg-[radial-gradient(120%_90%_at_18%_0%,#5ecfd5_0%,#41bcc4_55%,#2ea8b2_100%)] px-4 py-16">
@@ -176,9 +176,9 @@ export default function Login({ actionData }: Route.ComponentProps) {
           <HeartPulseIcon className="size-6 text-white/90" strokeWidth={1.5} />
         </GlassOrb>
 
-        <div className="relative rounded-3xl border border-white/35 bg-white/15 px-8 py-9 shadow-[0_30px_70px_-24px_rgba(9,78,84,0.5)] backdrop-blur-xl sm:px-10">
+        <div className="relative rounded-3xl border border-white bg-white px-8 py-9 shadow-[0_30px_70px_-24px_rgba(9,78,84,0.5)] sm:px-10">
           <CrossMark className="mx-auto block size-10" />
-          <h1 className="mt-4 text-center font-heading text-[25px] font-semibold tracking-tight text-slate-700">
+          <h1 className="mt-4 text-center font-heading text-[30px] font-semibold tracking-tight text-slate-700">
             Welcome Back!
           </h1>
 
@@ -187,7 +187,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
               <Field className="gap-1.5">
                 <FieldLabel
                   htmlFor="identifier"
-                  className={cn("text-[11px] font-medium tracking-wide", ACCENT)}
+                  className={cn("text-[13px] font-medium tracking-wide", ACCENT)}
                 >
                   Email or No. Handphone
                 </FieldLabel>
@@ -249,7 +249,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
                     "Ask them to set you a new password.",
                   )
                 }
-                className={cn("h-auto p-0 text-[11px] font-normal", ACCENT)}
+                className={cn("h-auto p-0 text-[13px] font-normal", ACCENT)}
               >
                 Forget Password ?
               </Button>
@@ -267,7 +267,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
             <Button
               type="submit"
               disabled={busy}
-              className="h-10 w-full rounded-full bg-[#3bb0b9] text-xs font-medium tracking-[0.14em] text-white shadow-[0_14px_28px_-12px_rgba(9,78,84,0.65)] hover:bg-[#2fa5ae]"
+              className="h-11 w-full rounded-full bg-[#3bb0b9] text-sm font-medium tracking-[0.14em] text-white shadow-[0_14px_28px_-12px_rgba(9,78,84,0.65)] hover:bg-[#2fa5ae]"
             >
               {busy && <Loader2Icon className="animate-spin" />}
               SIGN IN
