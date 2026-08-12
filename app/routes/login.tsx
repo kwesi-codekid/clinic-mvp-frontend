@@ -13,8 +13,6 @@
 
 import { useState } from "react";
 import {
-  CheckIcon,
-  ChevronDownIcon,
   DnaIcon,
   EyeIcon,
   EyeOffIcon,
@@ -27,15 +25,8 @@ import { data, Form, redirect, useNavigation } from "react-router";
 import { toast } from "sonner";
 
 import { Button } from "~/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu";
 import { Field, FieldGroup, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
-import { Separator } from "~/components/ui/separator";
 import { login } from "~/lib/api/auth";
 import { ApiError, describeApiError } from "~/lib/api/client";
 import { createStaffSession, hasSession } from "~/lib/auth.server";
@@ -112,50 +103,6 @@ function CrossMark(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-/** A circular English flag for the language pill. */
-function FlagEn(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden {...props}>
-      <defs>
-        <clipPath id="flag-en-clip">
-          <circle cx="10" cy="10" r="10" />
-        </clipPath>
-      </defs>
-      <g clipPath="url(#flag-en-clip)">
-        <rect width="20" height="20" fill="#1d4586" />
-        <path d="M0 0l20 20M20 0L0 20" stroke="#fff" strokeWidth="4" />
-        <path d="M0 0l20 20M20 0L0 20" stroke="#d3212c" strokeWidth="1.6" />
-        <path d="M10 0v20M0 10h20" stroke="#fff" strokeWidth="6" />
-        <path d="M10 0v20M0 10h20" stroke="#d3212c" strokeWidth="3.4" />
-      </g>
-    </svg>
-  );
-}
-
-/** The multicolour Google "G". */
-function GoogleG(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 18 18" aria-hidden {...props}>
-      <path
-        fill="#4285F4"
-        d="M17.64 9.2c0-.63-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62Z"
-      />
-      <path
-        fill="#34A853"
-        d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.32A9 9 0 0 0 9 18Z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.96H.96a9 9 0 0 0 0 8.08l3.01-2.32Z"
-      />
-      <path
-        fill="#EA4335"
-        d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59A9 9 0 0 0 .96 4.96l3.01 2.32C4.68 5.16 6.66 3.58 9 3.58Z"
-      />
-    </svg>
-  );
-}
-
 /** A frosted glass bubble holding one of the floating medical icons. */
 function GlassOrb({ className, children }: { className?: string; children?: React.ReactNode }) {
   return (
@@ -223,30 +170,13 @@ export default function Login({ actionData }: Route.ComponentProps) {
         <StethoscopeIcon className="size-12 text-white/90" strokeWidth={1.5} />
       </GlassOrb>
 
-      {/* Language selector. */}
-      <div className="absolute right-4 top-4 z-20 sm:right-6 sm:top-6">
-        <DropdownMenu>
-          <DropdownMenuTrigger className="flex h-8 items-center gap-1.5 rounded-full bg-[#0c5a63]/85 pl-1.5 pr-2.5 text-xs font-medium text-white shadow-sm outline-none transition-colors hover:bg-[#0c5a63] focus-visible:ring-2 focus-visible:ring-white/60">
-          <FlagEn className="size-5" />
-          En
-          <ChevronDownIcon className="size-3.5 opacity-80" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-36">
-            <DropdownMenuItem>
-              English
-              <CheckIcon className="ml-auto size-4" />
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
       {/* The card. */}
-      <div className="relative z-10 w-full max-w-[400px]">
+      <div className="relative z-10 w-full max-w-100">
         <GlassOrb className="-left-12 -top-14 flex size-16">
           <HeartPulseIcon className="size-6 text-white/90" strokeWidth={1.5} />
         </GlassOrb>
 
-        <div className="relative rounded-3xl border border-white/60 bg-white/55 px-8 py-9 shadow-[0_30px_70px_-24px_rgba(9,78,84,0.5)] backdrop-blur-xl sm:px-10">
+        <div className="relative rounded-3xl border border-white/35 bg-white/15 px-8 py-9 shadow-[0_30px_70px_-24px_rgba(9,78,84,0.5)] backdrop-blur-xl sm:px-10">
           <CrossMark className="mx-auto block size-10" />
           <h1 className="mt-4 text-center font-heading text-[25px] font-semibold tracking-tight text-slate-700">
             Welcome Back!
@@ -290,16 +220,21 @@ export default function Login({ actionData }: Route.ComponentProps) {
                     placeholder="Password"
                     className={cn(underlineInput, "pr-8")}
                   />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                    onClick={() => setShowPassword((visible) => !visible)}
-                    className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full text-slate-400 hover:bg-transparent hover:text-slate-600 [&_svg:not([class*='size-'])]:size-4"
-                  >
-                    {showPassword ? <EyeIcon /> : <EyeOffIcon />}
-                  </Button>
+                  {/* Positioning lives on the wrapper: the Button's own pressed
+                      state applies a translate that would cancel a translate
+                      placed directly on it and move it out from under the click. */}
+                  <span className="absolute right-0 top-1/2 -translate-y-1/2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      onClick={() => setShowPassword((visible) => !visible)}
+                      className="rounded-full text-slate-400 hover:bg-transparent hover:text-slate-600 [&_svg:not([class*='size-'])]:size-4"
+                    >
+                      {showPassword ? <EyeIcon /> : <EyeOffIcon />}
+                    </Button>
+                  </span>
                 </div>
               </Field>
             </FieldGroup>
@@ -337,45 +272,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
               {busy && <Loader2Icon className="animate-spin" />}
               SIGN IN
             </Button>
-
-            <div className="flex items-center gap-3">
-              <Separator className="flex-1 bg-slate-400/40" />
-              <span className="text-[11px] font-medium text-slate-500">OR</span>
-              <Separator className="flex-1 bg-slate-400/40" />
-            </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() =>
-                notAvailable(
-                  "Google sign-in isn't available",
-                  "Sign in with your clinic email or staff number.",
-                )
-              }
-              className="h-10 w-full rounded-full border-transparent bg-white text-xs font-medium text-slate-600 shadow-[0_12px_24px_-14px_rgba(9,78,84,0.6)] hover:bg-white hover:text-slate-700 dark:border-transparent dark:bg-white dark:hover:bg-white"
-            >
-              <GoogleG className="size-4" />
-              Continue with Google
-            </Button>
           </Form>
-
-          <p className="mt-7 text-center text-[11px] text-slate-500">
-            Dont have an account ?{" "}
-            <Button
-              type="button"
-              variant="link"
-              onClick={() =>
-                notAvailable(
-                  "Accounts are created by the administrator",
-                  "Ask them to add you as staff.",
-                )
-              }
-              className={cn("h-auto p-0 align-baseline text-[11px] font-semibold", ACCENT)}
-            >
-              Sign Up
-            </Button>
-          </p>
         </div>
       </div>
     </main>
