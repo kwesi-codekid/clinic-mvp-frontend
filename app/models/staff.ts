@@ -41,3 +41,51 @@ export type Staff = {
   lastLoginAt?: IsoDateTime;
   createdAt: IsoDateTime;
 };
+
+/* -------------------------------------------------------------------------
+   Write models
+   ------------------------------------------------------------------------- */
+
+/**
+ * A licence as submitted. Deliberately not {@link ProfessionalLicence}:
+ * `expired` is the API's to compute and must never be sent back.
+ */
+export type ProfessionalLicenceInput = {
+  council: LicenceCouncil;
+  number?: string;
+  /** Full ISO datetime — widen a `YYYY-MM-DD` picker value before sending. */
+  expiresAt?: IsoDateTime;
+};
+
+/**
+ * Body of `POST /staff`.
+ *
+ * `password` is set once, here; afterwards it can only be reset through
+ * {@link UpdateStaff}. Omitting `staffNumber` lets the API assign one.
+ */
+export type CreateStaff = {
+  staffNumber?: string;
+  title?: string;
+  firstName: string;
+  surname: string;
+  otherNames?: string;
+  email: string;
+  phone?: string;
+  password: string;
+  /** At least one — the API rejects an empty list. */
+  roles: Role[];
+  station?: Station | null;
+  specialty?: string;
+  licence?: ProfessionalLicenceInput;
+};
+
+/**
+ * Body of `PATCH /staff/{id}` — a **sparse** patch: only the keys present are
+ * touched. Omit a field to leave it as it is.
+ *
+ * `active: false` is what `DELETE /staff/{id}` does, and `active: true` is the
+ * only way back from it.
+ */
+export type UpdateStaff = Partial<CreateStaff> & {
+  active?: boolean;
+};

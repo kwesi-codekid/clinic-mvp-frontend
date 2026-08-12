@@ -1,5 +1,6 @@
 /**
- * Doctors / Staff — the clinic team directory (the read half of T14.1).
+ * Doctors / Staff — the clinic team directory, and the admin writes behind it
+ * (T14.1).
  *
  * A build of the approved staff-list design on top of the real API: stat
  * cards, role tabs, search and paging all drive `GET /staff` through URL
@@ -7,6 +8,10 @@
  * real-time columns (duty status, surgery workload) have no backend in the
  * spec; those slots carry what the API does know — station, contact details,
  * account and licence status, and last sign-in.
+ *
+ * Every write — add, edit, deactivate, reactivate — is a `POST` back to this
+ * route carrying an `intent`, submitted from the drawer. One action, one
+ * revalidation, no client-side cache of the list to keep in step.
  *
  * Tab and stat counts come from `limit: 1` list calls read for `meta.total`
  * — the cheapest count the API offers. They run in parallel with the page
@@ -20,15 +25,24 @@ import {
   ChevronRightIcon,
   DownloadIcon,
   HeartPulseIcon,
+  MoreHorizontalIcon,
+  PencilIcon,
   PlusIcon,
   SearchIcon,
   StethoscopeIcon,
+  UserRoundCheckIcon,
+  UserRoundXIcon,
   UsersRoundIcon,
   UserXIcon,
 } from "lucide-react";
-import { Link, useNavigation, useSearchParams } from "react-router";
+import { data, Link, useNavigation, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
+import {
+  NO_STATION,
+  StaffDrawer,
+  type StaffDrawerState,
+} from "~/components/staff-drawer";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Button, buttonVariants } from "~/components/ui/button";
 import {
@@ -39,6 +53,13 @@ import {
   CardHeader,
 } from "~/components/ui/card";
 import { Checkbox } from "~/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
 import {
   Table,
@@ -49,12 +70,20 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { ApiError, describeApiError } from "~/lib/api/client";
 import { throwRouteError } from "~/lib/api/route-error";
-import { listStaff, type StaffListQuery } from "~/lib/api/staff";
-import { requireStaff } from "~/lib/auth.server";
+import {
+  createStaff,
+  deactivateStaff,
+  listStaff,
+  updateStaff,
+  type StaffListQuery,
+} from "~/lib/api/staff";
+import { requireStaff, requireStaffAction } from "~/lib/auth.server";
 import { cn } from "~/lib/utils";
-import { Roles, Stations, type Role } from "~/models/enums";
-import type { Staff } from "~/models/staff";
+import { LicenceCouncils, Roles, Stations, type Role, type Station } from "~/models/enums";
+import { isObjectId } from "~/models/primitives";
+import type { ProfessionalLicenceInput, Staff, UpdateStaff } from "~/models/staff";
 import type { Route } from "./+types/staff";
 
 export function meta(_: Route.MetaArgs) {
@@ -114,6 +143,179 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   } catch (error) {
     throwRouteError(error);
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Writes — one action, four intents, all posted from the drawer
+   ------------------------------------------------------------------------- */
+
+/** Trimmed, or `undefined` when the field was left empty. */
+function text(form: FormData, key: string): string | undefined {
+  const raw = form.get(key);
+  return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : undefined;
+}
+
+function readRoles(form: FormData): Role[] {
+  return form.getAll("roles").filter((value): value is Role => Roles.is(value));
+}
+
+function readStation(form: FormData): Station | null | undefined {
+  const raw = form.get("station");
+  if (typeof raw !== "string") return undefined;
+  if (raw === NO_STATION) return null;
+  return Stations.is(raw) ? raw : undefined;
+}
+
+/**
+ * The licence block, or `undefined` when the form did not carry one.
+ *
+ * `council: "none"` is the API's own way of saying "not registered" — it is a
+ * real value, not an empty one, and posting it is how a licence gets cleared.
+ */
+function readLicence(form: FormData): ProfessionalLicenceInput | undefined {
+  const council = form.get("licenceCouncil");
+  if (!LicenceCouncils.is(council)) return undefined;
+  if (council === "none") return { council };
+
+  const expiresOn = text(form, "licenceExpiresOn");
+  return {
+    council,
+    number: text(form, "licenceNumber"),
+    // The picker gives a date; the API's pattern demands a UTC datetime.
+    expiresAt: expiresOn ? `${expiresOn}T00:00:00Z` : undefined,
+  };
+}
+
+/** Free-text fields an edit is allowed to empty. None has a `minLength`. */
+const CLEARABLE = ["title", "otherNames", "phone", "specialty"] as const;
+
+/**
+ * The fields shared by create and edit. `undefined` entries drop out of the
+ * JSON body, which is exactly what a sparse patch wants.
+ *
+ * `clearBlanks` is the difference between the two: a `PATCH` reads an omitted
+ * key as "leave alone", so emptying a field has to be said out loud — and with
+ * no nullable strings in the schema, `""` is the only way to say it. A create
+ * has nothing to clear, and posting `""` there would store an empty string
+ * where the field should simply be absent.
+ */
+function readProfile(form: FormData, { clearBlanks }: { clearBlanks: boolean }): UpdateStaff {
+  const optional = (key: (typeof CLEARABLE)[number]) =>
+    text(form, key) ?? (clearBlanks ? "" : undefined);
+
+  return {
+    staffNumber: text(form, "staffNumber"),
+    title: optional("title"),
+    firstName: text(form, "firstName"),
+    surname: text(form, "surname"),
+    otherNames: optional("otherNames"),
+    email: text(form, "email"),
+    phone: optional("phone"),
+    specialty: optional("specialty"),
+    station: readStation(form),
+    licence: readLicence(form),
+  };
+}
+
+export async function action({ request }: Route.ActionArgs) {
+  const { accessToken, setCookie } = await requireStaffAction(request);
+  const form = await request.formData();
+  const intent = String(form.get("intent") ?? "");
+  // Validated rather than asserted: this is the boundary the brand exists for.
+  const rawId = form.get("id");
+  const id = isObjectId(rawId) ? rawId : undefined;
+
+  const opts = { token: accessToken };
+  // A rotated token has to ride out on every exit, success or not.
+  const headers = setCookie ? { "Set-Cookie": setCookie } : undefined;
+
+  const ok = (message: string) => data({ ok: true as const, message }, { headers });
+  const fail = (
+    message: string,
+    fieldErrors: Record<string, string> = {},
+    status = 400,
+  ) => data({ ok: false as const, message, fieldErrors }, { status, headers });
+
+  try {
+    switch (intent) {
+      case "create": {
+        const profile = readProfile(form, { clearBlanks: false });
+        const { firstName, surname, email } = profile;
+        const password = text(form, "password");
+        const roles = readRoles(form);
+
+        // The browser enforces these on the form; a hand-rolled POST does not.
+        if (!firstName || !surname || !email || !password || roles.length === 0) {
+          const missing: Record<string, string> = {};
+          if (!firstName) missing["body.firstName"] = "Enter a first name.";
+          if (!surname) missing["body.surname"] = "Enter a surname.";
+          if (!email) missing["body.email"] = "Enter an email address.";
+          if (!password) missing["body.password"] = "Set a password.";
+          if (roles.length === 0) missing["body.roles"] = "Choose at least one role.";
+          return fail("Fill in the fields marked below.", missing);
+        }
+
+        const staff = await createStaff(
+          { ...profile, firstName, surname, email, password, roles },
+          opts,
+        );
+        return ok(`${staff.fullName} can now sign in.`);
+      }
+
+      case "edit": {
+        if (!id) return fail("That staff member could not be identified.", {}, 400);
+
+        const roles = readRoles(form);
+        if (roles.length === 0) {
+          return fail("Fill in the fields marked below.", {
+            "body.roles": "Choose at least one role.",
+          });
+        }
+
+        const staff = await updateStaff(
+          id,
+          {
+            ...readProfile(form, { clearBlanks: true }),
+            roles,
+            // Only sent when the admin actually typed a new one.
+            password: text(form, "password"),
+          },
+          opts,
+        );
+        return ok(`Saved ${staff.fullName}.`);
+      }
+
+      case "deactivate": {
+        if (!id) return fail("That staff member could not be identified.", {}, 400);
+        const staff = await deactivateStaff(id, opts);
+        return ok(`${staff.fullName} can no longer sign in.`);
+      }
+
+      case "activate": {
+        if (!id) return fail("That staff member could not be identified.", {}, 400);
+        const staff = await updateStaff(id, { active: true }, opts);
+        return ok(`${staff.fullName} can sign in again.`);
+      }
+
+      default:
+        return fail("That action is not one this screen can perform.", {}, 400);
+    }
+  } catch (error) {
+    if (!ApiError.is(error)) throw error;
+
+    // 409 here is always the same collision, and the generic conflict copy
+    // ("something changed since this screen loaded") would misdescribe it.
+    const message =
+      error.status === 409
+        ? "That email or staff number already belongs to another account."
+        : describeApiError(error).description;
+
+    return fail(
+      message,
+      error.fieldErrors(),
+      error.status >= 400 ? error.status : 502,
+    );
   }
 }
 
@@ -274,13 +476,46 @@ function exportCsv(items: Staff[]) {
    The screen
    ------------------------------------------------------------------------- */
 
-export default function StaffPage({ loaderData }: Route.ComponentProps) {
+export default function StaffPage({ loaderData, actionData }: Route.ComponentProps) {
   const { staffPage, tab, q, counts } = loaderData;
   const { items, meta } = staffPage;
 
   const [searchParams, setSearchParams] = useSearchParams();
   const navigation = useNavigation();
   const refreshing = navigation.state === "loading";
+  // Covers the POST and the revalidation that follows it, so the drawer's
+  // confirm stays busy until the table underneath actually holds the change.
+  const submitting = navigation.formData != null;
+
+  // Which drawer panel is open, if any. Add, edit and both status changes all
+  // land here — the table itself has no inline write.
+  const [drawer, setDrawer] = useState<StaffDrawerState | null>(null);
+
+  // The failure the open panel is showing. Held separately from `actionData`,
+  // which outlives the submission that produced it: without this, a rejected
+  // create would still be greeting whoever opened the next panel.
+  const [failure, setFailure] = useState<{
+    message: string;
+    fieldErrors: Record<string, string>;
+  } | null>(null);
+
+  function openDrawer(next: StaffDrawerState) {
+    setFailure(null);
+    setDrawer(next);
+  }
+
+  // A successful write closes the panel; a failed one keeps it open, with the
+  // API's field errors against the inputs that caused them.
+  useEffect(() => {
+    if (!actionData) return;
+    if (actionData.ok) {
+      setDrawer(null);
+      setFailure(null);
+      toast.success(actionData.message);
+    } else {
+      setFailure({ message: actionData.message, fieldErrors: actionData.fieldErrors });
+    }
+  }, [actionData]);
 
   // Row selection is page-local UI state; a navigation resets it.
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
@@ -350,13 +585,7 @@ export default function StaffPage({ loaderData }: Route.ComponentProps) {
             <DownloadIcon />
             Export data
           </Button>
-          <Button
-            onClick={() =>
-              toast.info("Adding staff is on the way", {
-                description: "Account creation lands with the staff admin module.",
-              })
-            }
-          >
+          <Button onClick={() => openDrawer({ mode: "create" })}>
             <PlusIcon />
             Add staff
           </Button>
@@ -448,13 +677,16 @@ export default function StaffPage({ loaderData }: Route.ComponentProps) {
               <TableHead className="h-11 px-4 text-xs font-medium tracking-wider text-muted-foreground uppercase">
                 Last sign-in
               </TableHead>
+              <TableHead className="h-11 w-14 px-4 text-right text-xs font-medium tracking-wider text-muted-foreground uppercase">
+                Actions
+              </TableHead>
             </TableRow>
           </TableHeader>
 
           <TableBody>
             {items.length === 0 && (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
                   {q ? (
                     <>
                       No staff match <span className="font-medium">“{q}”</span> in this view.
@@ -494,7 +726,9 @@ export default function StaffPage({ loaderData }: Route.ComponentProps) {
                     <div className="min-w-0">
                       <div className="truncate font-medium">{staff.fullName}</div>
                       <div className="truncate text-xs text-muted-foreground">
-                        {staff.specialty ??
+                        {/* `||`, not `??`: an edit that clears the specialty
+                            stores an empty string, not an absent field. */}
+                        {staff.specialty ||
                           staff.roles.map((role) => Roles.label(role)).join(" · ")}
                       </div>
                     </div>
@@ -540,6 +774,45 @@ export default function StaffPage({ loaderData }: Route.ComponentProps) {
                     ? formatDistanceToNow(new Date(staff.lastLoginAt), { addSuffix: true })
                     : "Never"}
                 </TableCell>
+
+                <TableCell className="w-14 px-4 py-3 text-right">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Actions for ${staff.fullName}`}
+                        />
+                      }
+                    >
+                      <MoreHorizontalIcon />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-44">
+                      <DropdownMenuItem onClick={() => openDrawer({ mode: "edit", staff })}>
+                        <PencilIcon />
+                        Edit details
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {staff.active ? (
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => openDrawer({ mode: "deactivate", staff })}
+                        >
+                          <UserRoundXIcon />
+                          Deactivate
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          onClick={() => openDrawer({ mode: "activate", staff })}
+                        >
+                          <UserRoundCheckIcon />
+                          Reactivate
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -574,6 +847,14 @@ export default function StaffPage({ loaderData }: Route.ComponentProps) {
           </div>
         </div>
       </Card>
+
+      <StaffDrawer
+        state={drawer}
+        onClose={() => setDrawer(null)}
+        busy={submitting}
+        fieldErrors={failure?.fieldErrors}
+        error={failure?.message}
+      />
     </div>
   );
 }

@@ -110,17 +110,40 @@ function loginRedirect(url: URL): string {
 const inFlightRefreshes = new Map<string, Promise<ApiSession>>();
 
 /**
- * Deduplicates concurrent refreshes of the same token. Without this, two
- * loaders running in parallel would both present the token; the second one
- * would look like a replay and revoke the session.
+ * How long a rotated pair stays cached against the token it replaced.
+ *
+ * Long enough to cover one navigation: when an action refreshes, the loaders
+ * that revalidate straight afterwards are still reading the *request's*
+ * cookie, which carries the token the action just spent.
+ */
+const ROTATED_TOKEN_TTL_MS = 30_000;
+
+/**
+ * Deduplicates refreshes of the same token. Without this, two loaders running
+ * in parallel would both present it; the second one would look like a replay
+ * and revoke the session.
+ *
+ * A successful result is kept for {@link ROTATED_TOKEN_TTL_MS} rather than
+ * dropped on settle, so the *sequential* case — action refreshes, revalidating
+ * loader presents the same spent token moments later — resolves to the pair
+ * that replaced it instead of tripping the replay defence.
  */
 function refreshOnce(refreshToken: string): Promise<ApiSession> {
   let pending = inFlightRefreshes.get(refreshToken);
   if (!pending) {
-    pending = refreshSession({ refreshToken }).finally(() => {
-      inFlightRefreshes.delete(refreshToken);
-    });
+    pending = refreshSession({ refreshToken });
     inFlightRefreshes.set(refreshToken, pending);
+
+    pending.then(
+      () => {
+        const expiry = setTimeout(() => {
+          inFlightRefreshes.delete(refreshToken);
+        }, ROTATED_TOKEN_TTL_MS);
+        // Never hold the process open for a cache entry.
+        expiry.unref?.();
+      },
+      () => inFlightRefreshes.delete(refreshToken),
+    );
   }
   return pending;
 }
@@ -144,9 +167,8 @@ export type StaffContext = {
  *   the new cookie so the rotated pair is committed before anything else runs.
  * - Refresh rejected → the session is gone; clear the cookie and sign in again.
  *
- * Call it from **loaders**. Actions will get their own variant when the first
- * authenticated action lands — the same-URL redirect would turn a POST into
- * a GET and drop the form body.
+ * Call it from **loaders** only: the same-URL redirect would turn a POST into
+ * a GET and drop the form body. Actions use {@link requireStaffAction}.
  */
 export async function requireStaff(request: Request): Promise<StaffContext> {
   const session = await getSession(request);
@@ -179,6 +201,63 @@ export async function requireStaff(request: Request): Promise<StaffContext> {
   throw redirect(url.pathname + url.search, {
     headers: { "Set-Cookie": await sessionStorage.commitSession(session) },
   });
+}
+
+export type StaffActionContext = StaffContext & {
+  /**
+   * `Set-Cookie` to attach to the action's own response, present only when the
+   * token rotated on this request. Dropping it costs the user their session on
+   * the next navigation, so pass it through on **every** exit — the failure
+   * responses as much as the success one.
+   */
+  setCookie?: string;
+};
+
+/**
+ * The action counterpart of {@link requireStaff}.
+ *
+ * An action cannot be redirected mid-flight to commit a rotated token: the
+ * browser would re-issue it as a GET and the form body would be gone. So the
+ * refresh happens in place and the new cookie is handed back for the caller to
+ * attach, rather than committed by a redirect.
+ *
+ * @example
+ * const { accessToken, setCookie } = await requireStaffAction(request);
+ * const headers = setCookie ? { "Set-Cookie": setCookie } : undefined;
+ * return data({ ok: true }, { headers });
+ */
+export async function requireStaffAction(request: Request): Promise<StaffActionContext> {
+  const session = await getSession(request);
+  const auth = session.get("auth");
+  const url = new URL(request.url);
+
+  if (!auth) {
+    // Nothing to preserve — there was never a session to submit under.
+    throw redirect(loginRedirect(url));
+  }
+
+  if (Date.now() < auth.expiresAt - REFRESH_SKEW_MS) {
+    return { staff: auth.staff, accessToken: auth.accessToken };
+  }
+
+  let fresh: ApiSession;
+  try {
+    fresh = await refreshOnce(auth.refreshToken);
+  } catch (error) {
+    if (ApiError.is(error) && !error.isRetryable) {
+      throw redirect(loginRedirect(url), {
+        headers: { "Set-Cookie": await sessionStorage.destroySession(session) },
+      });
+    }
+    throw error;
+  }
+
+  session.set("auth", toAuthData(fresh));
+  return {
+    staff: fresh.staff,
+    accessToken: fresh.accessToken,
+    setCookie: await sessionStorage.commitSession(session),
+  };
 }
 
 /** Whether a session cookie exists, without refreshing or validating it. */
